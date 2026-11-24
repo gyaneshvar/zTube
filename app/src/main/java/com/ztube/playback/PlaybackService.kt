@@ -72,6 +72,7 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(50_000, 120_000, 1_000, 2_000)
+            .setTargetBufferBytes(48 * 1024 * 1024)
             .build()
         val hlsDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(OkHttpDownloader.USER_AGENT)
