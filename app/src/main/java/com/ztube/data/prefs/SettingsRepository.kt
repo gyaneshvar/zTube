@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,6 +26,7 @@ data class YoutubeAccount(
     val channelTitle: String?,
     val channelAvatar: String?,
     val lastSyncedAt: Long?,
+    val lastSyncAttemptAt: Long?,
     val needsReauth: Boolean,
 )
 
@@ -50,6 +52,7 @@ class SettingsRepository @Inject constructor(
                 channelTitle = prefs[CHANNEL_TITLE],
                 channelAvatar = prefs[CHANNEL_AVATAR],
                 lastSyncedAt = prefs[LAST_SYNCED_AT],
+                lastSyncAttemptAt = prefs[LAST_SYNC_ATTEMPT_AT],
                 needsReauth = prefs[NEEDS_REAUTH] ?: false,
             )
         }
@@ -76,6 +79,10 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    suspend fun setSyncAttempted(at: Long) {
+        context.dataStore.edit { it[LAST_SYNC_ATTEMPT_AT] = at }
+    }
+
     suspend fun clearYoutubeAccount() {
         context.dataStore.edit {
             it.remove(ACCOUNT_EMAIL)
@@ -83,8 +90,15 @@ class SettingsRepository @Inject constructor(
             it.remove(CHANNEL_TITLE)
             it.remove(CHANNEL_AVATAR)
             it.remove(LAST_SYNCED_AT)
+            it.remove(LAST_SYNC_ATTEMPT_AT)
             it.remove(NEEDS_REAUTH)
         }
+    }
+
+    suspend fun signInPromptVersion(): Long = context.dataStore.data.first()[SIGN_IN_PROMPT_VERSION] ?: 0L
+
+    suspend fun setSignInPromptVersion(version: Long) {
+        context.dataStore.edit { it[SIGN_IN_PROMPT_VERSION] = version }
     }
 
     suspend fun setAutoplay(enabled: Boolean) {
@@ -137,7 +151,9 @@ class SettingsRepository @Inject constructor(
         val CHANNEL_TITLE = stringPreferencesKey("youtube_channel_title")
         val CHANNEL_AVATAR = stringPreferencesKey("youtube_channel_avatar")
         val LAST_SYNCED_AT = longPreferencesKey("last_synced_at")
+        val LAST_SYNC_ATTEMPT_AT = longPreferencesKey("youtube_last_sync_attempt_at")
         val NEEDS_REAUTH = booleanPreferencesKey("needs_reauth")
+        val SIGN_IN_PROMPT_VERSION = longPreferencesKey("sign_in_prompt_version")
         const val MAX_RECENT = 15
     }
 }

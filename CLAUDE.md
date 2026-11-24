@@ -19,10 +19,10 @@ Single module `app/`, package `com.ztube`, Hilt everywhere, Compose + Material 3
 - `data/feed` — `FeedRepository`: subscription feed, emitted incrementally per channel.
 - `data/prefs` — DataStore `SettingsRepository` (speed, quality, autoplay, SponsorBlock, recents, Google account state).
 - `data/sponsorblock` — SponsorBlock client (hashed lookup).
-- `data/account` — optional Google sign-in (`GoogleAuth` on `AuthorizationClient`), YouTube Data API v3 client, `YoutubeSync` (read-only mirror of subscriptions + playlists), `YoutubeSyncWorker` (daily), `YoutubeAccountManager` (entry point for UI).
+- `data/account` — optional Google sign-in (`GoogleAuth` on `AuthorizationClient`), YouTube Data API v3 client, `YoutubeSync` (read-only mirror of subscriptions + playlists), `YoutubeSyncWorker` (daily periodic, plus a one-time run enqueued on app foreground when the last sync is over 4 hours old), `YoutubeAccountManager` (entry point for UI). The sign-in flow is shared by Settings and the once-per-version first-launch prompt (`ui/account`: `GoogleSignInViewModel` + `GoogleSignInHost`).
 - `playback` — `PlaybackService` (`MediaSessionService` owning ExoPlayer). A `MediaItem`'s `mediaId` is the YouTube URL and is resolved in `onAddMediaItems`: finished downloads first, otherwise NewPipe streams wrapped as DASH and merged. Custom `YoutubeHttpDataSourceFactory` sets the per-client User-Agent and request params. The service owns autoplay and error recovery (re-resolve and resume). UI talks to it through the `PlayerConnection` singleton (`MediaController`).
 - `download` — `DownloadWorker` (WorkManager, chunked and resumable) and `DownloadManager`.
-- `ui` — screens per package; shared pieces in `ui/components`; navigation in `ui/ZTubeRoot.kt`; splash overlay in `MainActivity`.
+- `ui` — screens per package; shared pieces in `ui/components`; navigation in `ui/ZTubeRoot.kt` (bottom tabs Home / Search / Library / You, where You is the Settings screen with the account card and the avatar as its icon); splash overlay in `MainActivity`.
 
 ## Rules that are easy to break
 

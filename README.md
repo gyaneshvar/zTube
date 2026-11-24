@@ -19,7 +19,7 @@ Requires **Android 8.0 (API 26)** or newer. Updates install over the previous ve
 | | |
 |---|---|
 | **No ads** | Streams are played directly — YouTube's ads are never requested |
-| **SponsorBlock** | Auto-skips in-video sponsor reads, intros, self-promo (toggle in Settings) |
+| **SponsorBlock** | Auto-skips in-video sponsor reads, intros, self-promo (toggle in the You tab) |
 | **Background play** | Keeps playing with the screen off or app in background, with lock-screen / notification controls |
 | **Picture-in-picture** | Automatically pops into a floating window when you leave the app |
 | **Speed control** | 0.25× – 3×, remembered across videos |
@@ -51,10 +51,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Google sign-in (optional)
 
-Signing in with Google imports your YouTube subscriptions and playlists and keeps them in sync (daily, or via **Sync now** in Settings). It is strictly read-only: zTube never changes anything on your YouTube account. Synced data stays on your device, and access tokens are never stored — they are requested from Google Play services whenever a sync runs.
+Signing in with Google imports your YouTube subscriptions and playlists and keeps them in sync: a sign-in prompt appears once on first launch and once after each update while you're signed out, the app syncs when you open it if the last sync is over 4 hours old, plus a daily background sync, and **Sync now** in the You tab syncs manually. It is strictly read-only: zTube never changes anything on your YouTube account. Synced data stays on your device, and access tokens are never stored — they are requested from Google Play services whenever a sync runs.
 
 - Works only for Gmail accounts that were added as test users of this build (up to 100). Other accounts see "access blocked"; the Takeout import still works for everyone.
-- The app stays in Google's Testing mode, so sign-in expires every 7 days — Settings shows "Sign in again" when that happens.
+- The app stays in Google's Testing mode, so sign-in expires every 7 days — the You tab shows "Sign in again" when that happens.
 - YouTube playlists are read-only in zTube. Signing out lets you keep the synced items as local ones or remove them; anything you added in zTube is always kept.
 
 ### Set up your own Google Cloud project
