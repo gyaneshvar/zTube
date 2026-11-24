@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -113,6 +114,7 @@ class PlayerViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val playlists: StateFlow<List<PlaylistSummary>> = playlistDao.playlists()
+        .map { list -> list.filter { it.youtubePlaylistId == null } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val download: StateFlow<DownloadEntity?> = currentUrl
@@ -400,9 +402,9 @@ class PlayerViewModel @Inject constructor(
         if (current.uploaderUrl.isEmpty()) return
         viewModelScope.launch {
             if (subscribed.value) {
-                subscriptionDao.delete(current.uploaderUrl)
+                subscriptionDao.unsubscribe(current.uploaderUrl)
             } else {
-                subscriptionDao.insert(
+                subscriptionDao.subscribe(
                     SubscriptionEntity(
                         channelUrl = current.uploaderUrl,
                         name = current.uploader,

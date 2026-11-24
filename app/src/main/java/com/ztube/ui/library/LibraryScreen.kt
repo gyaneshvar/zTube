@@ -3,6 +3,7 @@ package com.ztube.ui.library
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -260,7 +261,20 @@ private fun PlaylistsSection(viewModel: LibraryViewModel, onPlaylistClick: (Long
                     .clickable { onPlaylistClick(playlist.id) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                Text(playlist.name, style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(playlist.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false))
+                    if (playlist.youtubePlaylistId != null) {
+                        Text(
+                            "YouTube",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
                 Text(
                     "${playlist.videoCount} videos",
                     style = MaterialTheme.typography.bodySmall,

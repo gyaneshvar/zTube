@@ -84,9 +84,9 @@ class ChannelViewModel @Inject constructor(
         val page = (_state.value as? ChannelUiState.Loaded)?.page ?: return
         viewModelScope.launch {
             if (subscribed.value) {
-                subscriptionDao.delete(url)
+                subscriptionDao.unsubscribe(url)
             } else {
-                subscriptionDao.insert(
+                subscriptionDao.subscribe(
                     SubscriptionEntity(
                         channelUrl = url,
                         name = page.name,

@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ztube.ui.components.EmptyState
 import com.ztube.ui.components.ErrorState
+import com.ztube.ui.components.LoadingRow
 import com.ztube.ui.components.VideoCard
 import com.ztube.ui.components.VideoListSkeleton
 import com.ztube.ui.components.ZTubeTopBar
@@ -56,7 +57,7 @@ fun HomeScreen(
             return@Column
         }
         PullToRefreshBox(
-            isRefreshing = state.loading && state.videos.isNotEmpty(),
+            isRefreshing = state.refreshing,
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -76,6 +77,7 @@ fun HomeScreen(
                             onUploaderClick = { onChannelClick(video.uploaderUrl) },
                         )
                     }
+                    if (state.loading) item { LoadingRow() }
                 }
             }
         }
