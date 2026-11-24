@@ -16,7 +16,7 @@ Single module `app/`, package `com.ztube`, Hilt everywhere, Compose + Material 3
 
 - `data/extractor` — NewPipeExtractor init (`OkHttpDownloader`) and `YoutubeRepository` (search, stream info, channels, paging; small LRU cache).
 - `data/db` — Room `ZTubeDatabase`: subscriptions, history, playlists, playlist videos, downloads.
-- `data/feed` — `FeedRepository`: subscription feed, emitted incrementally per channel.
+- `data/feed` — `FeedRepository`: subscription feed persisted in Room (`feed_videos`, `feed_channels`) and refreshed per channel when stale (45 min); Home reads the DB, `FeedRefreshWorker` refreshes every 8 h on unmetered network.
 - `data/prefs` — DataStore `SettingsRepository` (speed, quality, autoplay, SponsorBlock, recents, Google account state).
 - `data/sponsorblock` — SponsorBlock client (hashed lookup).
 - `data/account` — optional Google sign-in (`GoogleAuth` on `AuthorizationClient`), YouTube Data API v3 client, `YoutubeSync` (read-only mirror of subscriptions + playlists), `YoutubeSyncWorker` (daily periodic, plus a one-time run enqueued on app foreground when the last sync is over 4 hours old), `YoutubeAccountManager` (entry point for UI). The sign-in flow is shared by Settings and the once-per-version first-launch prompt (`ui/account`: `GoogleSignInViewModel` + `GoogleSignInHost`).

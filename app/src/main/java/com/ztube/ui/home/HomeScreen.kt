@@ -63,7 +63,7 @@ fun HomeScreen(
         ) {
             val error = state.error
             when {
-                state.videos.isEmpty() && state.loading -> Column(Modifier.padding(top = 8.dp)) { VideoListSkeleton() }
+                state.videos.isEmpty() && error == null -> Column(Modifier.padding(top = 8.dp)) { VideoListSkeleton() }
                 state.videos.isEmpty() && error != null -> ErrorState(error, onRetry = viewModel::refresh)
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),

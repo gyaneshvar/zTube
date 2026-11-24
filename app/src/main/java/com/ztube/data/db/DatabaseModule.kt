@@ -17,7 +17,7 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): ZTubeDatabase =
         Room.databaseBuilder(context, ZTubeDatabase::class.java, "ztube.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
     @Provides
@@ -31,4 +31,7 @@ object DatabaseModule {
 
     @Provides
     fun downloadDao(db: ZTubeDatabase): DownloadDao = db.downloadDao()
+
+    @Provides
+    fun feedDao(db: ZTubeDatabase): FeedDao = db.feedDao()
 }
