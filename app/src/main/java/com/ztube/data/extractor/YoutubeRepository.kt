@@ -1,6 +1,7 @@
 package com.ztube.data.extractor
 
 import android.os.SystemClock
+import com.ztube.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Image
@@ -47,11 +48,13 @@ class YoutubeRepository @Inject constructor() {
     private val videosTabs = ConcurrentHashMap<String, ListLinkHandler>()
 
     suspend fun search(query: String): PagedVideos = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "search")
         val info = SearchInfo.getInfo(youtube, searchHandler(query))
         PagedVideos(info.relatedItems.toVideos(), info.nextPage.validOrNull())
     }
 
     suspend fun searchMore(query: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "searchMore")
         val more = SearchInfo.getMoreItems(youtube, searchHandler(query), page)
         PagedVideos(more.items.toVideos(), more.nextPage.validOrNull())
     }
@@ -60,25 +63,32 @@ class YoutubeRepository @Inject constructor() {
         if (!fresh) {
             val cached = synchronized(infoCache) { infoCache[url] }
             if (cached != null && SystemClock.elapsedRealtime() - cached.at < CACHE_TTL_MS) {
+                DebugLog.log("Repo", "streamInfo cache hit $url")
                 return@withContext cached.info
             }
         }
+        DebugLog.log("Repo", "streamInfo fetch #${DebugLog.fetches.incrementAndGet()} fresh=$fresh $url")
         StreamInfo.getInfo(youtube, url).also {
             synchronized(infoCache) { infoCache[url] = CachedInfo(it, SystemClock.elapsedRealtime()) }
         }
     }
 
-    fun related(info: StreamInfo): List<VideoItem> = info.relatedItems.toVideos()
+    fun related(info: StreamInfo): List<VideoItem> {
+        DebugLog.log("Repo", "related ${info.relatedItems.size}")
+        return info.relatedItems.toVideos()
+    }
 
     suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
         youtube.suggestionExtractor.suggestionList(query)
     }
 
     suspend fun channelUploads(channelUrl: String): PagedVideos = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "channelUploads $channelUrl")
         uploads(channelUrl, ChannelInfo.getInfo(youtube, channelUrl))
     }
 
     suspend fun channelUploadsMore(channelUrl: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "channelUploadsMore $channelUrl")
         val tab = videosTabs[channelUrl] ?: videosTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl)
             ?: return@withContext PagedVideos(emptyList(), null)
         val more = ChannelTabInfo.getMoreItems(youtube, tab, page)
@@ -86,6 +96,7 @@ class YoutubeRepository @Inject constructor() {
     }
 
     suspend fun channel(channelUrl: String): ChannelPage = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "channel $channelUrl")
         val info = ChannelInfo.getInfo(youtube, channelUrl)
         val videos = uploads(channelUrl, info)
         ChannelPage(

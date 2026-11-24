@@ -1,5 +1,6 @@
 package com.ztube.data.feed
 
+import com.ztube.DebugLog
 import com.ztube.data.extractor.VideoItem
 import com.ztube.data.extractor.YoutubeRepository
 import kotlinx.coroutines.CancellationException
@@ -27,6 +28,7 @@ class FeedRepository @Inject constructor(
         mutex.withLock {
             if (force) byChannel.clear()
             val pending = channelUrls.filter { !byChannel.containsKey(it) }
+            DebugLog.log("Feed", "start channels=${channelUrls.size} pending=${pending.size} force=$force")
             if (pending.size < channelUrls.size) send(merged(channelUrls))
             val limit = Semaphore(CONCURRENCY)
             coroutineScope {
@@ -43,6 +45,7 @@ class FeedRepository @Inject constructor(
                         }
                         if (videos != null) {
                             byChannel[url] = videos
+                            DebugLog.log("Feed", "channel done ${byChannel.size}/${channelUrls.size}")
                             send(merged(channelUrls))
                         }
                     }

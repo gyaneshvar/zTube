@@ -27,6 +27,8 @@ class ZTubeApp : Application(), Configuration.Provider {
     override fun onCreate() {
         CrashReporter.install(this)
         super.onCreate()
+        DebugLog.start(this)
+        DebugLog.log("App", "onCreate")
         NewPipe.init(OkHttpDownloader())
         val scope = CoroutineScope(Dispatchers.Default)
         scope.launch { accountManager.scheduleIfSignedIn() }
@@ -35,5 +37,10 @@ class ZTubeApp : Application(), Configuration.Provider {
                 scope.launch { accountManager.syncIfStale() }
             }
         })
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        DebugLog.persist()
     }
 }

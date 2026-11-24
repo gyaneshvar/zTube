@@ -3,24 +3,30 @@ package com.ztube.playback
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionError
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
+import com.ztube.DebugLog
 import com.ztube.data.db.DownloadDao
 import com.ztube.data.db.HistoryDao
 import com.ztube.data.db.HistoryEntity
@@ -64,12 +70,14 @@ class PlaybackService : MediaSessionService() {
     private var recoveryJob: Job? = null
     private var recoveryId: String? = null
     private var recoveryAttempts = 0
+    private val recoveryTimes = mutableMapOf<String, ArrayDeque<Long>>()
     private var lastMediaId: String? = null
     private val played = mutableSetOf<String>()
     private lateinit var player: ExoPlayer
 
     override fun onCreate() {
         super.onCreate()
+        DebugLog.log(TAG, "onCreate")
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(50_000, 120_000, 1_000, 2_000)
             .setTargetBufferBytes(48 * 1024 * 1024)
@@ -90,6 +98,7 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                DebugLog.log(TAG, "transition id=${mediaItem?.mediaId} reason=$reason count=${player.mediaItemCount}")
                 loadSegments(mediaItem)
                 val sameItem = mediaItem?.mediaId == lastMediaId
                 lastMediaId = mediaItem?.mediaId
@@ -100,10 +109,30 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                DebugLog.log(TAG, "state=$playbackState")
                 if (playbackState == Player.STATE_READY) recoveryAttempts = 0
             }
 
-            override fun onPlayerError(error: PlaybackException) = recover(error)
+            override fun onPlayerError(error: PlaybackException) {
+                DebugLog.log(TAG, "error ${error.errorCodeName} ${error.message} cause=${error.cause?.javaClass?.name}")
+                recover(error)
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                DebugLog.log(TAG, "videoSize ${videoSize.width}x${videoSize.height}")
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.isSelected } ?: return
+                for (i in 0 until group.length) {
+                    if (!group.isTrackSelected(i)) continue
+                    val format = group.getTrackFormat(i)
+                    DebugLog.log(
+                        TAG,
+                        "video track ${format.sampleMimeType} ${format.codecs} ${format.width}x${format.height} ${format.bitrate}",
+                    )
+                }
+            }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) saveProgress(player)
@@ -118,6 +147,20 @@ class PlaybackService : MediaSessionService() {
                     reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION
                 ) return
                 oldPosition.mediaItem?.let { savePosition(it.mediaId, oldPosition.positionMs) }
+            }
+        })
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+                DebugLog.droppedFrames.addAndGet(droppedFrames.toLong())
+            }
+
+            override fun onVideoDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                DebugLog.log(TAG, "decoder $decoderName")
             }
         })
         mediaSession = MediaSession.Builder(this, player).setCallback(SessionCallback()).build()
@@ -140,6 +183,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        DebugLog.log(TAG, "onDestroy")
         scope.cancel()
         mediaSession?.run {
             player.release()
@@ -215,6 +259,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private suspend fun resolve(item: MediaItem, fresh: Boolean = false): MediaItem {
+        DebugLog.log(TAG, "resolve id=${item.mediaId} fresh=$fresh")
         if (item.localConfiguration != null) return item
         resolveDownloaded(item)?.let { return it }
         val requestExtras = item.requestMetadata.extras
@@ -253,6 +298,7 @@ class PlaybackService : MediaSessionService() {
         val current = player.currentMediaItem ?: return
         if (!autoplay || player.currentMediaItemIndex != player.mediaItemCount - 1) return
         played.add(current.mediaId)
+        DebugLog.log(TAG, "enqueueNext start current=${current.mediaId}")
         nextJob = scope.launch {
             try {
                 val related = repository.related(repository.streamInfo(current.mediaId))
@@ -271,7 +317,10 @@ class PlaybackService : MediaSessionService() {
                 )
                 val stillLast = player.currentMediaItem?.mediaId == current.mediaId &&
                     player.currentMediaItemIndex == player.mediaItemCount - 1
-                if (autoplay && stillLast) player.addMediaItem(resolved)
+                if (autoplay && stillLast) {
+                    player.addMediaItem(resolved)
+                    DebugLog.log(TAG, "enqueueNext added=${next.url} count=${player.mediaItemCount}")
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -295,7 +344,17 @@ class PlaybackService : MediaSessionService() {
             recoveryAttempts = 0
         }
         if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) return
+        val now = SystemClock.elapsedRealtime()
+        val times = recoveryTimes.getOrPut(item.mediaId) { ArrayDeque() }
+        while (times.isNotEmpty() && now - times.first() > RECOVERY_WINDOW_MS) times.removeFirst()
+        recoveryTimes.values.removeAll { it !== times && (it.isEmpty() || now - it.last() > RECOVERY_WINDOW_MS) }
+        if (times.size >= MAX_RECOVERIES_PER_WINDOW) {
+            DebugLog.log(TAG, "recover blocked by cap id=${item.mediaId}")
+            return
+        }
+        times.addLast(now)
         recoveryAttempts++
+        DebugLog.log(TAG, "recover attempt=$recoveryAttempts id=${item.mediaId}")
         val position = player.currentPosition
         val wasPlaying = player.playWhenReady
         val request = MediaItem.Builder()
@@ -310,6 +369,7 @@ class PlaybackService : MediaSessionService() {
                 if (player.currentMediaItem?.mediaId != item.mediaId) return@launch
                 val index = player.currentMediaItemIndex
                 player.replaceMediaItem(index, resolved)
+                DebugLog.log(TAG, "recover replaced count=${player.mediaItemCount}")
                 player.seekTo(index, position)
                 player.prepare()
                 if (wasPlaying) player.play()
@@ -344,11 +404,24 @@ class PlaybackService : MediaSessionService() {
     }
 
     private inner class SessionCallback : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            DebugLog.log(TAG, "onConnect ${controller.packageName}")
+            return super.onConnect(session, controller)
+        }
+
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            DebugLog.log(TAG, "onDisconnected ${controller.packageName}")
+        }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
+            DebugLog.log(TAG, "onAddMediaItems count=${mediaItems.size}")
             val future = SettableFuture.create<MutableList<MediaItem>>()
             scope.launch {
                 try {
@@ -372,6 +445,8 @@ class PlaybackService : MediaSessionService() {
         const val POLL_INTERVAL_MS = 500L
         const val PROGRESS_INTERVAL_MS = 10_000L
         const val MAX_RECOVERY_ATTEMPTS = 2
+        const val MAX_RECOVERIES_PER_WINDOW = 4
+        const val RECOVERY_WINDOW_MS = 10 * 60 * 1000L
         const val LIVE_EDGE_GAP_MS = 10_000L
         const val TAG = "PlaybackService"
     }

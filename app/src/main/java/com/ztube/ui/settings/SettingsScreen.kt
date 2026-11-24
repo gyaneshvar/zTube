@@ -1,5 +1,6 @@
 package com.ztube.ui.settings
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +53,7 @@ fun SettingsScreen(
     val syncing by viewModel.working.collectAsStateWithLifecycle()
     val signInWorking by signIn.working.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.show(it) }
@@ -94,6 +97,17 @@ fun SettingsScreen(
             checked = autoplay,
             onCheckedChange = viewModel::setAutoplay,
         )
+        TextButton(
+            onClick = {
+                viewModel.sendDebugReport { report ->
+                    val send = Intent(Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(Intent.EXTRA_TEXT, report)
+                    context.startActivity(Intent.createChooser(send, "Send debug log"))
+                }
+            },
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) { Text("Send debug log") }
     }
 
     GoogleSignInHost(signIn)
