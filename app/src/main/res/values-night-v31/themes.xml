@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.ZTube" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0B0B0C</item>
+        <item name="android:windowSplashScreenBackground">#FBF6F2</item>
+    </style>
+</resources>
