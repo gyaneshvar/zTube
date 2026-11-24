@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -57,17 +59,35 @@ fun EmptyState(
 }
 
 @Composable
-fun ErrorState(message: String, onRetry: (() -> Unit)?, modifier: Modifier = Modifier) {
+fun ErrorState(
+    message: String,
+    onRetry: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    onOpenInYoutube: (() -> Unit)? = null,
+) {
     EmptyState(
         icon = Icons.Filled.ErrorOutline,
         title = "Something went wrong",
         subtitle = message,
         modifier = modifier,
-        action = onRetry?.let {
+        action = if (onRetry == null && onOpenInYoutube == null) null else {
             {
-                FilledTonalButton(onClick = it) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Retry", modifier = Modifier.padding(start = 8.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    onRetry?.let {
+                        FilledTonalButton(onClick = it) {
+                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Retry", modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    onOpenInYoutube?.let {
+                        OutlinedButton(onClick = it) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Open in YouTube", modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
                 }
             }
         },
