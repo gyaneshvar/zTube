@@ -13,11 +13,13 @@ class DownloadSelection(val video: VideoStream?, val audio: AudioStream?)
 
 object DownloadStreams {
 
+    const val AUDIO_ONLY_LABEL = "Audio only"
+
     private const val MIN_HEIGHT = 144
     private const val MAX_HEIGHT = 1080
 
     fun options(info: StreamInfo): List<DownloadOption> {
-        if (!info.dashMpdUrl.isNullOrBlank()) return emptyList()
+        if (StreamSelector.isLive(info) || !info.dashMpdUrl.isNullOrBlank()) return emptyList()
         val videos = StreamSelector.heights(info)
             .filter { it in MIN_HEIGHT..MAX_HEIGHT }
             .reversed()
@@ -26,7 +28,7 @@ object DownloadStreams {
                 DownloadOption(height, "${height}p", size(selection, info.duration))
             }
         val audio = StreamSelector.bestAudio(info)
-            ?.let { DownloadOption(0, "Audio only", size(DownloadSelection(null, it), info.duration)) }
+            ?.let { DownloadOption(0, AUDIO_ONLY_LABEL, size(DownloadSelection(null, it), info.duration)) }
         return videos + listOfNotNull(audio)
     }
 

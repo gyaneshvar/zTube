@@ -27,14 +27,21 @@ class PlaylistViewModel @Inject constructor(
     val videos: StateFlow<List<PlaylistVideoEntity>> = playlistDao.videos(id)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun removeVideo(videoUrl: String) {
-        viewModelScope.launch { playlistDao.removeVideo(id, videoUrl) }
+    fun removeVideo(video: PlaylistVideoEntity) {
+        viewModelScope.launch { playlistDao.removeVideo(id, video.videoUrl) }
     }
 
-    fun deletePlaylist(onDeleted: () -> Unit) {
+    suspend fun restoreVideo(video: PlaylistVideoEntity) = playlistDao.insertVideo(video)
+
+    fun deletePlaylist(onDeleted: (restore: suspend () -> Unit) -> Unit) {
+        val entity = playlist.value ?: return
+        val items = videos.value
         viewModelScope.launch {
             playlistDao.delete(id)
-            onDeleted()
+            onDeleted {
+                playlistDao.insert(entity)
+                items.forEach { playlistDao.insertVideo(it) }
+            }
         }
     }
 }

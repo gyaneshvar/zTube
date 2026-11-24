@@ -12,8 +12,9 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.ztube.data.db.DownloadDao
-import com.ztube.data.extractor.OkHttpDownloader
+import com.ztube.data.extractor.best
 import com.ztube.data.extractor.YoutubeRepository
+import com.ztube.playback.youtubeUserAgent
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -87,7 +88,7 @@ class DownloadWorker @AssistedInject constructor(
             }
         }
 
-        info.thumbnails.firstOrNull()?.url?.let { thumbnail ->
+        info.thumbnails.best()?.let { thumbnail ->
             try {
                 fetchWhole(thumbnail, File(dir, "thumb.jpg"))
             } catch (e: IOException) {
@@ -190,7 +191,8 @@ class DownloadWorker @AssistedInject constructor(
         private val client = OkHttpClient.Builder()
             .readTimeout(30, TimeUnit.SECONDS)
             .addInterceptor { chain ->
-                chain.proceed(chain.request().newBuilder().header("User-Agent", OkHttpDownloader.USER_AGENT).build())
+                val request = chain.request()
+                chain.proceed(request.newBuilder().header("User-Agent", youtubeUserAgent(request.url.toString())).build())
             }
             .build()
     }

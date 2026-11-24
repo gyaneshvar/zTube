@@ -5,8 +5,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,17 +19,54 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.ztube.data.extractor.VideoItem
+import com.ztube.ui.components.Avatar
+import com.ztube.ui.components.ErrorState
+import com.ztube.ui.components.SubscribeButton
+import com.ztube.ui.components.VideoRow
+import com.ztube.ui.components.VideoRowSkeleton
+import com.ztube.ui.components.formatCount
+import com.ztube.ui.components.shimmer
+import com.ztube.ui.components.videoMeta
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,11 +80,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,7 +99,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.ui.PlayerView
+import coil3.compose.AsyncImage
+import com.ztube.ui.components.rememberImageRequest
 import com.ztube.data.db.DownloadEntity
 import com.ztube.data.db.PlaylistSummary
 import com.ztube.download.DownloadOption
@@ -66,6 +114,9 @@ import com.ztube.download.formatSize
 
 private val SPEEDS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
+private val SEEK_MS = 10_000L
+private val CONTROLS_HEIGHT = 96.dp
+
 private var notificationAsked = false
 
 private enum class Sheet { Speed, Quality, Playlist, Download }
@@ -73,6 +124,7 @@ private enum class Sheet { Speed, Quality, Playlist, Download }
 @Composable
 fun PlayerScreen(
     onChannelClick: (String) -> Unit,
+    onBack: () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -84,10 +136,18 @@ fun PlayerScreen(
     val download by viewModel.download.collectAsStateWithLifecycle()
     val downloadOptions by viewModel.downloadOptions.collectAsStateWithLifecycle()
     val playbackError by viewModel.playbackError.collectAsStateWithLifecycle()
+    val related by viewModel.related.collectAsStateWithLifecycle()
+    val autoplay by viewModel.autoplay.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.playing.collectAsStateWithLifecycle()
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<Sheet?>(null) }
     var newPlaylist by rememberSaveable { mutableStateOf(false) }
-    val videoOnly = inPip || fullscreen
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val videoOnly = inPip || fullscreen || landscape
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    var controllerVisible by remember { mutableStateOf(false) }
+    val firstFrameRendered = rememberFirstFrameRendered(controller)
+    val darkTheme = isSystemInDarkTheme()
 
     val context = LocalContext.current
     val view = LocalView.current
@@ -108,17 +168,25 @@ fun PlayerScreen(
 
     DisposableEffect(fullscreen) {
         val activity = context.findActivity()
+        if (fullscreen) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+    }
+
+    DisposableEffect(videoOnly) {
+        val activity = context.findActivity()
         val insets = activity?.let { WindowCompat.getInsetsController(it.window, view) }
-        if (fullscreen) {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            insets?.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (videoOnly) {
+            insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insets?.hide(WindowInsetsCompat.Type.systemBars())
         }
-        onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            insets?.show(WindowInsetsCompat.Type.systemBars())
-        }
+        onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+
+    DisposableEffect(darkTheme) {
+        val activity = context.findActivity()
+        val insets = activity?.let { WindowCompat.getInsetsController(it.window, view) }
+        insets?.isAppearanceLightStatusBars = false
+        onDispose { insets?.isAppearanceLightStatusBars = !darkTheme }
     }
 
     DisposableEffect(Unit) {
@@ -128,9 +196,24 @@ fun PlayerScreen(
 
     BackHandler(fullscreen) { fullscreen = false }
 
+    fun seekBy(deltaMs: Long) {
+        val player = controller ?: return
+        val target = player.currentPosition + deltaMs
+        val duration = player.duration
+        player.seekTo(if (duration == C.TIME_UNSET) target.coerceAtLeast(0) else target.coerceIn(0, duration))
+    }
+
+    fun toggleController() {
+        val view = playerView ?: return
+        if (view.isControllerFullyVisible) view.hideController() else view.showController()
+    }
+
     Column(
-        Modifier.fillMaxSize().then(if (videoOnly) Modifier else Modifier.systemBarsPadding()),
+        Modifier.fillMaxSize().then(if (videoOnly) Modifier else Modifier.navigationBarsPadding()),
     ) {
+        if (!videoOnly) {
+            Spacer(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(Color.Black))
+        }
         Box(
             (if (videoOnly) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                 .background(Color.Black),
@@ -139,37 +222,87 @@ fun PlayerScreen(
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                         setFullscreenButtonClickListener { fullscreen = it }
+                        setControllerVisibilityListener(
+                            PlayerView.ControllerVisibilityListener { controllerVisible = it == View.VISIBLE },
+                        )
                     }
                 },
                 update = {
+                    playerView = it
                     it.player = controller
                     it.useController = !inPip
+                    it.keepScreenOn = isPlaying
                     it.setFullscreenButtonState(fullscreen)
                 },
                 onRelease = { it.player = null },
                 modifier = Modifier.fillMaxSize(),
             )
-            if (controller == null && state !is PlayerUiState.Error) CircularProgressIndicator()
-            playbackError?.let { message ->
-                Column(
-                    Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+            val thumbnail = (state as? PlayerUiState.Loaded)?.thumbnail
+            if (!firstFrameRendered && thumbnail != null) {
+                AsyncImage(
+                    model = rememberImageRequest(thumbnail),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (!firstFrameRendered && playbackError == null && state !is PlayerUiState.Error) {
+                CircularProgressIndicator()
+            }
+            if (!inPip) {
+                Row(
+                    Modifier.matchParentSize().padding(bottom = if (controllerVisible) CONTROLS_HEIGHT else 0.dp),
                 ) {
-                    Text(message, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    TextButton(onClick = viewModel::retry) { Text("Retry") }
+                    SeekZone(
+                        forward = false,
+                        onSeek = { seekBy(-SEEK_MS) },
+                        onTap = ::toggleController,
+                        modifier = Modifier.weight(0.3f).fillMaxHeight(),
+                    )
+                    Spacer(Modifier.weight(0.4f))
+                    SeekZone(
+                        forward = true,
+                        onSeek = { seekBy(SEEK_MS) },
+                        onTap = ::toggleController,
+                        modifier = Modifier.weight(0.3f).fillMaxHeight(),
+                    )
+                }
+                playbackError?.let { message ->
+                    Column(
+                        Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(message, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        TextButton(onClick = viewModel::retry) { Text("Retry") }
+                    }
+                }
+            }
+            if (!videoOnly) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color.Black.copy(alpha = 0.4f),
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Minimize")
                 }
             }
         }
 
         if (!videoOnly) {
             when (val s = state) {
-                PlayerUiState.Loading -> Unit
+                PlayerUiState.Loading -> LoadingDetails()
                 is PlayerUiState.Loaded -> Details(
                     s,
                     speed,
                     subscribed,
                     download,
+                    related,
+                    autoplay,
                     canDownload = downloadOptions.isNotEmpty(),
                     onDownload = { sheet = Sheet.Download },
                     onSpeed = { sheet = Sheet.Speed },
@@ -177,53 +310,64 @@ fun PlayerScreen(
                     onPlaylist = { sheet = Sheet.Playlist },
                     onSubscribe = viewModel::toggleSubscribe,
                     onChannelClick = { onChannelClick(s.uploaderUrl) },
+                    onAutoplay = viewModel::setAutoplay,
+                    onRelatedClick = viewModel::playVideo,
                 )
-                is PlayerUiState.Error -> Text(
-                    s.message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp),
-                )
+                is PlayerUiState.Error -> ErrorState(s.message, onRetry = viewModel::reload)
             }
         }
     }
 
     val loaded = state as? PlayerUiState.Loaded
-    when (sheet) {
-        Sheet.Speed -> OptionSheet(
-            options = SPEEDS,
-            selected = speed,
-            label = ::speedLabel,
-            onSelect = viewModel::setSpeed,
-            onDismiss = { sheet = null },
-        )
-        Sheet.Quality -> if (loaded != null) OptionSheet(
-            options = loaded.heights.reversed(),
-            selected = loaded.quality,
-            label = { "${it}p" },
-            onSelect = viewModel::setQuality,
-            onDismiss = { sheet = null },
-        )
-        Sheet.Playlist -> PlaylistSheet(
-            playlists = playlists,
-            onSelect = viewModel::addToPlaylist,
-            onNew = { newPlaylist = true },
-            onDismiss = { sheet = null },
-        )
-        Sheet.Download -> DownloadSheet(
-            download = download,
-            options = downloadOptions,
-            onStart = viewModel::startDownload,
-            onDelete = viewModel::deleteDownload,
-            onDismiss = { sheet = null },
-        )
-        null -> Unit
-    }
+    if (!inPip) {
+        when (sheet) {
+            Sheet.Speed -> OptionSheet(
+                options = SPEEDS,
+                selected = speed,
+                label = ::speedLabel,
+                onSelect = viewModel::setSpeed,
+                onDismiss = { sheet = null },
+            )
+            Sheet.Quality -> if (loaded != null) OptionSheet(
+                options = loaded.heights.reversed(),
+                selected = loaded.quality,
+                label = { "${it}p" },
+                onSelect = viewModel::setQuality,
+                onDismiss = { sheet = null },
+            )
+            Sheet.Playlist -> PlaylistSheet(
+                playlists = playlists,
+                onSelect = viewModel::addToPlaylist,
+                onNew = { newPlaylist = true },
+                onDismiss = { sheet = null },
+            )
+            Sheet.Download -> DownloadSheet(
+                download = download,
+                options = downloadOptions,
+                onStart = viewModel::startDownload,
+                onDelete = viewModel::deleteDownload,
+                onDismiss = { sheet = null },
+            )
+            null -> Unit
+        }
 
-    if (newPlaylist) {
-        NewPlaylistDialog(
-            onCreate = viewModel::createPlaylist,
-            onDismiss = { newPlaylist = false },
-        )
+        if (newPlaylist) {
+            NewPlaylistDialog(
+                onCreate = viewModel::createPlaylist,
+                onDismiss = { newPlaylist = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingDetails() {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.fillMaxWidth(0.9f).height(20.dp).clip(RoundedCornerShape(6.dp)).shimmer())
+        Box(Modifier.fillMaxWidth(0.5f).height(14.dp).clip(RoundedCornerShape(6.dp)).shimmer())
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(3) { Box(Modifier.width(90.dp).height(32.dp).clip(CircleShape).shimmer()) }
+        }
     }
 }
 
@@ -233,6 +377,8 @@ private fun Details(
     speed: Float,
     subscribed: Boolean,
     download: DownloadEntity?,
+    related: List<VideoItem>?,
+    autoplay: Boolean,
     canDownload: Boolean,
     onDownload: () -> Unit,
     onSpeed: () -> Unit,
@@ -240,55 +386,171 @@ private fun Details(
     onPlaylist: () -> Unit,
     onSubscribe: () -> Unit,
     onChannelClick: () -> Unit,
+    onAutoplay: (Boolean) -> Unit,
+    onRelatedClick: (String) -> Unit,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var titleExpanded by rememberSaveable { mutableStateOf(false) }
+    var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
 
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text(state.title, style = MaterialTheme.typography.titleLarge)
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (state.viewCount >= 0) "${state.uploader} · ${"%,d".format(state.viewCount)} views" else state.uploader,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(enabled = state.uploaderUrl.isNotEmpty(), onClick = onChannelClick),
-            )
-            if (state.uploaderUrl.isNotEmpty()) {
-                Spacer(Modifier.width(8.dp))
-                FilledTonalButton(onClick = onSubscribe) {
-                    Text(if (subscribed) "Subscribed" else "Subscribe")
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+        item {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { titleExpanded = !titleExpanded }
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            ) {
+                Text(
+                    state.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.animateContentSize(),
+                )
+                val meta = listOfNotNull(
+                    state.viewCount.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
+                    state.uploadedText?.takeIf { it.isNotEmpty() },
+                    state.likeCount.takeIf { it >= 0 }?.let { "${formatCount(it)} likes" },
+                ).joinToString(" · ")
+                if (meta.isNotEmpty()) {
+                    Text(
+                        meta,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }
-        Row(
-            Modifier.padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AssistChip(onClick = onSpeed, label = { Text(speedLabel(speed)) })
-            AssistChip(
-                onClick = onQuality,
-                enabled = state.heights.isNotEmpty(),
-                label = { Text(if (state.heights.isEmpty()) "Auto" else "${state.quality}p") },
-            )
-            AssistChip(onClick = onPlaylist, label = { Text("Playlist") })
-            AssistChip(
-                onClick = onDownload,
-                enabled = canDownload || download != null,
-                label = { Text(downloadLabel(download)) },
-            )
+        item {
+            Row(
+                Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActionChip(Icons.Filled.Speed, speedLabel(speed), onSpeed)
+                ActionChip(
+                    Icons.Filled.HighQuality,
+                    if (state.heights.isEmpty()) "Auto" else "${state.quality}p",
+                    onQuality,
+                    enabled = state.heights.isNotEmpty(),
+                )
+                ActionChip(
+                    if (download?.status == DownloadStatus.DONE) Icons.Filled.DownloadDone else Icons.Filled.Download,
+                    downloadLabel(download),
+                    onDownload,
+                    enabled = canDownload || download != null,
+                )
+                ActionChip(Icons.AutoMirrored.Filled.PlaylistAdd, "Save", onPlaylist)
+            }
         }
-        Text(
-            state.description,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = if (expanded) Int.MAX_VALUE else 3,
-            modifier = Modifier.clickable { expanded = !expanded },
-        )
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    onClick = onChannelClick,
+                    enabled = state.uploaderUrl.isNotEmpty(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(url = state.uploaderAvatarUrl, name = state.uploader, size = 40.dp)
+                        Column(Modifier.padding(horizontal = 12.dp)) {
+                            Text(
+                                state.uploader,
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (state.subscriberCount >= 0) {
+                                Text(
+                                    "${formatCount(state.subscriberCount)} subscribers",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (state.uploaderUrl.isNotEmpty()) SubscribeButton(subscribed, onSubscribe)
+            }
+        }
+        if (state.description.isNotBlank()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .animateContentSize()
+                        .clickable { descriptionExpanded = !descriptionExpanded },
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Description", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            state.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = if (descriptionExpanded) Int.MAX_VALUE else 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        Text(
+                            if (descriptionExpanded) "Show less" else "Show more",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Up next", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(
+                    "Autoplay",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Switch(checked = autoplay, onCheckedChange = onAutoplay)
+            }
+        }
+        if (related == null) {
+            items(4) { VideoRowSkeleton() }
+        } else {
+            items(related, key = { it.url }) { video ->
+                VideoRow(
+                    title = video.title,
+                    subtitle = videoMeta(video),
+                    thumbnailUrl = video.thumbnailUrl,
+                    durationSeconds = video.durationSeconds,
+                    onClick = { onRelatedClick(video.url) },
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun ActionChip(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    AssistChip(
+        onClick = onClick,
+        enabled = enabled,
+        label = { Text(label) },
+        leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        shape = CircleShape,
+        colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        border = null,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -469,4 +731,31 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+@Composable
+private fun rememberFirstFrameRendered(player: Player?): Boolean {
+    var rendered by remember(player) {
+        mutableStateOf(
+            player != null && player.playbackState == Player.STATE_READY && player.videoSize != VideoSize.UNKNOWN,
+        )
+    }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                rendered = true
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) rendered = true
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                rendered = false
+            }
+        }
+        player?.addListener(listener)
+        onDispose { player?.removeListener(listener) }
+    }
+    return rendered
 }

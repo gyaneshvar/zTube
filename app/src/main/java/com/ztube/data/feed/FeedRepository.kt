@@ -31,7 +31,7 @@ class FeedRepository @Inject constructor(
                     async {
                         limit.withPermit {
                             url to try {
-                                repository.channelUploads(url).take(PER_CHANNEL)
+                                repository.channelUploads(url).items.take(PER_CHANNEL)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {

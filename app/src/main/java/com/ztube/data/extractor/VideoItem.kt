@@ -10,4 +10,5 @@ data class VideoItem(
     val viewCount: Long,
     val uploadedText: String?,
     val uploadedAtMillis: Long? = null,
+    val uploaderAvatarUrl: String? = null,
 )

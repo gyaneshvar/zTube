@@ -1,15 +1,12 @@
 package com.ztube.ui.player
 
 import android.content.Context
-import android.net.Uri
-import android.os.Bundle
 import android.widget.Toast
-import androidx.core.net.toUri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -22,6 +19,8 @@ import com.ztube.data.db.PlaylistSummary
 import com.ztube.data.db.PlaylistVideoEntity
 import com.ztube.data.db.SubscriptionDao
 import com.ztube.data.db.SubscriptionEntity
+import com.ztube.data.extractor.VideoItem
+import com.ztube.data.extractor.best
 import com.ztube.data.extractor.YoutubeRepository
 import com.ztube.data.prefs.SettingsRepository
 import com.ztube.download.DownloadManager
@@ -29,10 +28,11 @@ import com.ztube.download.DownloadOption
 import com.ztube.download.DownloadStatus
 import com.ztube.download.DownloadStreams
 import com.ztube.download.thumbnailModel
-import com.ztube.playback.EXTRA_QUALITY
 import com.ztube.playback.PipState
 import com.ztube.playback.PlayerConnection
 import com.ztube.playback.StreamSelector
+import com.ztube.playback.isStreamExpired
+import com.ztube.playback.videoMediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -60,6 +63,10 @@ sealed interface PlayerUiState {
         val description: String,
         val heights: List<Int>,
         val quality: Int,
+        val likeCount: Long = -1,
+        val subscriberCount: Long = -1,
+        val uploadedText: String? = null,
+        val thumbnail: String? = null,
     ) : PlayerUiState
     data class Error(val message: String) : PlayerUiState
 }
@@ -68,7 +75,7 @@ sealed interface PlayerUiState {
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val repository: YoutubeRepository,
     private val settings: SettingsRepository,
     private val pipState: PipState,
@@ -80,16 +87,18 @@ class PlayerViewModel @Inject constructor(
     private val downloadManager: DownloadManager,
 ) : ViewModel() {
 
-    private val url: String = Uri.decode(checkNotNull(savedStateHandle["url"]))
+    private val currentUrl = MutableStateFlow(checkNotNull(savedStateHandle.get<String>("url")))
+    private val url: String get() = currentUrl.value
 
     private val _state = MutableStateFlow<PlayerUiState>(PlayerUiState.Loading)
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
-    private val _controller = MutableStateFlow<MediaController?>(null)
-    val controller: StateFlow<MediaController?> = _controller.asStateFlow()
+    val controller: StateFlow<MediaController?> = connection.controller
 
     val speed: StateFlow<Float> = settings.playbackSpeed
         .stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
+
+    val playing: StateFlow<Boolean> = connection.playing
 
     val inPip: StateFlow<Boolean> = pipState.inPip
 
@@ -106,8 +115,15 @@ class PlayerViewModel @Inject constructor(
     val playlists: StateFlow<List<PlaylistSummary>> = playlistDao.playlists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val download: StateFlow<DownloadEntity?> = downloadDao.download(url)
+    val download: StateFlow<DownloadEntity?> = currentUrl
+        .flatMapLatest { downloadDao.download(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _related = MutableStateFlow<List<VideoItem>?>(null)
+    val related: StateFlow<List<VideoItem>?> = _related.asStateFlow()
+
+    val autoplay: StateFlow<Boolean> = settings.autoplay
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     private val _downloadOptions = MutableStateFlow<List<DownloadOption>>(emptyList())
     val downloadOptions: StateFlow<List<DownloadOption>> = _downloadOptions.asStateFlow()
@@ -117,8 +133,11 @@ class PlayerViewModel @Inject constructor(
 
     private var info: StreamInfo? = null
     private var visible = false
+    private var started = false
     private var lastItem: MediaItem? = null
-    private var lastStartMs = 0L
+    private var loadJob: Job? = null
+    private var errorJob: Job? = null
+    private var attached: MediaController? = null
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -126,33 +145,93 @@ class PlayerViewModel @Inject constructor(
             updatePip()
         }
 
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val id = mediaItem?.mediaId ?: return
+            if (id == url) return
+            reset(id)
+            load(id, startPlayback = false)
+        }
+
         override fun onPlayerError(error: PlaybackException) {
-            _playbackError.value = error.message ?: "Playback failed"
+            errorJob?.cancel()
+            errorJob = viewModelScope.launch {
+                if (error.isStreamExpired()) delay(RECOVERY_GRACE_MS)
+                if (connection.controller.value?.playerError != null) {
+                    _playbackError.value = error.message ?: "Playback failed"
+                }
+            }
         }
     }
 
     init {
+        connection.connect()
         viewModelScope.launch { connection.errors.collect { _playbackError.value = it } }
         viewModelScope.launch {
-            val saved = downloadDao.get(url)?.takeIf { it.status == DownloadStatus.DONE }
-            if (saved != null) playDownloaded(saved) else playOnline()
+            connection.controller.collect { current ->
+                attached?.removeListener(listener)
+                attached = current
+                current?.addListener(listener)
+                updatePip()
+            }
+        }
+        load(url, startPlayback = true)
+    }
+
+    fun reload() {
+        reset(url)
+        load(url, startPlayback = true)
+    }
+
+    fun playVideo(videoUrl: String) {
+        if (videoUrl == url) return
+        reset(videoUrl)
+        load(videoUrl, startPlayback = true)
+    }
+
+    private fun reset(videoUrl: String) {
+        currentUrl.value = videoUrl
+        savedStateHandle["url"] = videoUrl
+        info = null
+        started = false
+        lastItem = null
+        _state.value = PlayerUiState.Loading
+        _related.value = null
+        _downloadOptions.value = emptyList()
+        _playbackError.value = null
+    }
+
+    private fun load(target: String, startPlayback: Boolean) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val saved = downloadDao.get(target)?.takeIf { it.status == DownloadStatus.DONE }
+            if (saved != null) playDownloaded(target, saved, startPlayback) else playOnline(target, startPlayback)
         }
     }
 
-    private suspend fun playOnline() {
+    private suspend fun playOnline(target: String, startPlayback: Boolean) {
         try {
-            val streamInfo = repository.streamInfo(url)
+            val streamInfo = repository.streamInfo(target)
+            if (url != target) return
             setInfo(streamInfo)
             val heights = StreamSelector.heights(streamInfo)
             val quality = StreamSelector.pickHeight(heights, settings.quality.first())
             _state.value = loaded(streamInfo, heights, quality)
-            startPlayback(mediaItem(streamInfo, quality), startPosition(streamInfo.duration * 1000))
+            _related.value = repository.related(streamInfo)
+            val item = currentItem(streamInfo, quality)
+            if (startPlayback) {
+                startPlayback(item, startPosition(streamInfo.duration * 1000))
+            } else {
+                lastItem = item
+                started = true
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            _state.value = PlayerUiState.Error(e.message ?: "Failed to load video")
+            if (url == target) _state.value = PlayerUiState.Error(e.message ?: "Failed to load video")
         }
     }
 
-    private suspend fun playDownloaded(saved: DownloadEntity) {
+    private suspend fun playDownloaded(target: String, saved: DownloadEntity, startPlayback: Boolean) {
         _state.value = PlayerUiState.Loaded(
             title = saved.title,
             uploader = saved.uploader,
@@ -162,37 +241,59 @@ class PlayerViewModel @Inject constructor(
             description = "",
             heights = emptyList(),
             quality = 0,
+            thumbnail = saved.thumbnailModel(),
         )
-        viewModelScope.launch {
-            try {
-                val streamInfo = repository.streamInfo(url)
-                setInfo(streamInfo)
-                _state.value = loaded(streamInfo, emptyList(), 0)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-            }
-        }
         try {
-            startPlayback(offlineItem(saved), startPosition(saved.durationSeconds * 1000))
+            coroutineScope {
+                launch {
+                    try {
+                        val streamInfo = repository.streamInfo(target)
+                        if (url != target) return@launch
+                        setInfo(streamInfo)
+                        _state.value = loaded(streamInfo, emptyList(), 0)
+                        _related.value = repository.related(streamInfo)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (url == target) _related.value = emptyList()
+                    }
+                }
+                val item = videoMediaItem(
+                    target,
+                    saved.title,
+                    saved.uploader,
+                    saved.thumbnailModel(),
+                    saved.durationSeconds,
+                    0,
+                )
+                if (startPlayback) {
+                    startPlayback(item, startPosition(saved.durationSeconds * 1000))
+                } else {
+                    lastItem = item
+                    started = true
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            _state.value = PlayerUiState.Error(e.message ?: "Failed to play download")
+            if (url == target) _state.value = PlayerUiState.Error(e.message ?: "Failed to play download")
         }
+    }
+
+    fun setAutoplay(enabled: Boolean) {
+        viewModelScope.launch { settings.setAutoplay(enabled) }
     }
 
     private suspend fun startPlayback(item: MediaItem, startPositionMs: Long) {
         lastItem = item
-        lastStartMs = startPositionMs
-        val controller = connection.controller()
-        controller.removeListener(listener)
-        controller.addListener(listener)
+        val controller = connection.awaitController()
         if (controller.currentMediaItem?.mediaId != url) {
             controller.setMediaItem(item, startPositionMs)
             controller.prepare()
             controller.setPlaybackSpeed(settings.playbackSpeed.first())
             controller.play()
         }
-        _controller.value = controller
+        started = true
         updatePip()
     }
 
@@ -205,11 +306,15 @@ class PlayerViewModel @Inject constructor(
         title = streamInfo.name,
         uploader = streamInfo.uploaderName.orEmpty(),
         uploaderUrl = streamInfo.uploaderUrl.orEmpty(),
-        uploaderAvatarUrl = streamInfo.uploaderAvatars.firstOrNull()?.url,
+        uploaderAvatarUrl = streamInfo.uploaderAvatars.best(),
         viewCount = streamInfo.viewCount,
         description = streamInfo.description.content.orEmpty(),
         heights = heights,
         quality = quality,
+        likeCount = streamInfo.likeCount,
+        subscriberCount = streamInfo.uploaderSubscriberCount,
+        uploadedText = streamInfo.textualUploadDate,
+        thumbnail = streamInfo.thumbnails.best(),
     )
 
     fun startDownload(option: DownloadOption) {
@@ -220,7 +325,7 @@ class PlayerViewModel @Inject constructor(
                     videoUrl = url,
                     title = streamInfo.name,
                     uploader = streamInfo.uploaderName.orEmpty(),
-                    thumbnailUrl = streamInfo.thumbnails.firstOrNull()?.url,
+                    thumbnailUrl = streamInfo.thumbnails.best(),
                     durationSeconds = streamInfo.duration,
                     videoPath = null,
                     audioPath = "",
@@ -241,7 +346,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setSpeed(speed: Float) {
-        _controller.value?.setPlaybackSpeed(speed)
+        connection.controller.value?.setPlaybackSpeed(speed)
         viewModelScope.launch { settings.setPlaybackSpeed(speed) }
     }
 
@@ -251,20 +356,30 @@ class PlayerViewModel @Inject constructor(
         _state.value = current.copy(quality = height)
         viewModelScope.launch { settings.setQuality(height) }
         _playbackError.value = null
-        _controller.value?.run {
-            val item = mediaItem(streamInfo, height)
+        connection.controller.value?.run {
+            val item = currentItem(streamInfo, height)
             lastItem = item
-            lastStartMs = currentPosition
             setMediaItem(item, currentPosition)
             prepare()
         }
     }
 
     fun retry() {
-        val item = lastItem ?: return
-        val controller = _controller.value ?: return
+        val controller = connection.controller.value ?: return
+        val metadata = lastItem?.mediaMetadata ?: return
+        val quality = (_state.value as? PlayerUiState.Loaded)?.quality ?: 0
+        val item = videoMediaItem(
+            url,
+            metadata.title?.toString().orEmpty(),
+            metadata.artist?.toString().orEmpty(),
+            metadata.artworkUri?.toString(),
+            (metadata.durationMs ?: 0L) / 1000,
+            quality,
+            fresh = true,
+        )
+        val live = info?.let { StreamSelector.isLive(it) } == true
         _playbackError.value = null
-        controller.setMediaItem(item, lastStartMs)
+        controller.setMediaItem(item, if (live) C.TIME_UNSET else controller.currentPosition)
         controller.prepare()
         controller.play()
     }
@@ -272,6 +387,12 @@ class PlayerViewModel @Inject constructor(
     fun setVisible(visible: Boolean) {
         this.visible = visible
         updatePip()
+        if (!visible || !started) return
+        val id = connection.controller.value?.currentMediaItem?.mediaId ?: return
+        if (id != url) {
+            reset(id)
+            load(id, startPlayback = false)
+        }
     }
 
     fun toggleSubscribe() {
@@ -302,7 +423,7 @@ class PlayerViewModel @Inject constructor(
                     videoUrl = url,
                     title = streamInfo.name,
                     uploader = streamInfo.uploaderName.orEmpty(),
-                    thumbnailUrl = streamInfo.thumbnails.firstOrNull()?.url,
+                    thumbnailUrl = streamInfo.thumbnails.best(),
                     durationSeconds = streamInfo.duration,
                     position = playlistDao.nextPosition(playlistId),
                 ),
@@ -321,11 +442,11 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         pipState.canEnter.value = false
-        _controller.value?.removeListener(listener)
+        attached?.removeListener(listener)
     }
 
     private fun updatePip() {
-        pipState.canEnter.value = visible && _controller.value?.isPlaying == true
+        pipState.canEnter.value = visible && connection.controller.value?.isPlaying == true
     }
 
     private suspend fun startPosition(durationMs: Long): Long {
@@ -333,36 +454,17 @@ class PlayerViewModel @Inject constructor(
         return if (saved > RESUME_MARGIN_MS && saved < durationMs - RESUME_MARGIN_MS) saved else 0
     }
 
-    private fun offlineItem(saved: DownloadEntity): MediaItem =
-        MediaItem.Builder()
-            .setMediaId(url)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(saved.title)
-                    .setArtist(saved.uploader)
-                    .setArtworkUri(saved.thumbnailModel()?.toUri())
-                    .setDurationMs(saved.durationSeconds * 1000)
-                    .build(),
-            )
-            .build()
-
-    private fun mediaItem(streamInfo: StreamInfo, height: Int): MediaItem {
-        val extras = Bundle().apply { putInt(EXTRA_QUALITY, height) }
-        return MediaItem.Builder()
-            .setMediaId(url)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(streamInfo.name)
-                    .setArtist(streamInfo.uploaderName)
-                    .setArtworkUri(streamInfo.thumbnails.firstOrNull()?.url?.toUri())
-                    .setDurationMs(streamInfo.duration * 1000)
-                    .build(),
-            )
-            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build())
-            .build()
-    }
+    private fun currentItem(streamInfo: StreamInfo, quality: Int): MediaItem = videoMediaItem(
+        url,
+        streamInfo.name,
+        streamInfo.uploaderName.orEmpty(),
+        streamInfo.thumbnails.best(),
+        streamInfo.duration,
+        quality,
+    )
 
     private companion object {
         const val RESUME_MARGIN_MS = 10_000L
+        const val RECOVERY_GRACE_MS = 4_000L
     }
 }

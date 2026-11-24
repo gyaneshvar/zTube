@@ -1,3 +1,5 @@
 <resources>
-    <style name="Theme.ZTube" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.ZTube" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFFFF</item>
+    </style>
 </resources>

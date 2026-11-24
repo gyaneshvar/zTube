@@ -13,17 +13,19 @@ import com.ztube.data.db.PlaylistEntity
 import com.ztube.data.db.PlaylistSummary
 import com.ztube.data.db.SubscriptionDao
 import com.ztube.data.db.SubscriptionEntity
-import com.ztube.data.prefs.SettingsRepository
 import com.ztube.download.DownloadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -31,16 +33,12 @@ import javax.inject.Inject
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val settings: SettingsRepository,
     private val historyDao: HistoryDao,
     private val playlistDao: PlaylistDao,
     private val subscriptionDao: SubscriptionDao,
     private val downloadDao: DownloadDao,
     private val downloadManager: DownloadManager,
 ) : ViewModel() {
-
-    val sponsorBlockEnabled: StateFlow<Boolean> = settings.sponsorBlockEnabled
-        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     val history: StateFlow<List<HistoryEntity>> = historyDao.all()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -51,19 +49,21 @@ class LibraryViewModel @Inject constructor(
     val subscriptions: StateFlow<List<SubscriptionEntity>> = subscriptionDao.all()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val downloads: StateFlow<List<DownloadEntity>> = downloadDao.all()
+    private val hiddenDownloads = MutableStateFlow<Set<String>>(emptySet())
+
+    val downloads: StateFlow<List<DownloadEntity>> = combine(downloadDao.all(), hiddenDownloads) { all, hidden ->
+        all.filter { it.videoUrl !in hidden }
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = _messages.receiveAsFlow()
 
-    fun setSponsorBlockEnabled(enabled: Boolean) {
-        viewModelScope.launch { settings.setSponsorBlockEnabled(enabled) }
+    fun removeHistory(entry: HistoryEntity) {
+        viewModelScope.launch { historyDao.delete(entry.videoUrl) }
     }
 
-    fun removeHistory(videoUrl: String) {
-        viewModelScope.launch { historyDao.delete(videoUrl) }
-    }
+    suspend fun restoreHistory(entry: HistoryEntity) = historyDao.record(entry)
 
     fun clearHistory() {
         viewModelScope.launch { historyDao.clear() }
@@ -76,17 +76,28 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun deleteDownload(videoUrl: String) {
-        viewModelScope.launch { downloadManager.delete(videoUrl) }
+    fun hideDownload(videoUrl: String) {
+        hiddenDownloads.update { it + videoUrl }
+    }
+
+    fun restoreDownload(videoUrl: String) {
+        hiddenDownloads.update { it - videoUrl }
+    }
+
+    suspend fun deleteDownload(videoUrl: String) {
+        downloadManager.delete(videoUrl)
+        hiddenDownloads.update { it - videoUrl }
     }
 
     fun retryDownload(download: DownloadEntity) {
         viewModelScope.launch { downloadManager.retry(download) }
     }
 
-    fun unsubscribe(channelUrl: String) {
-        viewModelScope.launch { subscriptionDao.delete(channelUrl) }
+    fun unsubscribe(subscription: SubscriptionEntity) {
+        viewModelScope.launch { subscriptionDao.delete(subscription.channelUrl) }
     }
+
+    suspend fun resubscribe(subscription: SubscriptionEntity) = subscriptionDao.insert(subscription)
 
     fun importSubscriptions(uri: Uri) {
         viewModelScope.launch {

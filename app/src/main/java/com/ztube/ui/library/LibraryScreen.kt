@@ -3,7 +3,6 @@ package com.ztube.ui.library
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,14 +10,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -29,42 +31,45 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import com.ztube.data.db.DownloadEntity
 import com.ztube.download.DownloadStatus
 import com.ztube.download.formatSize
 import com.ztube.download.thumbnailModel
+import com.ztube.ui.components.Avatar
+import com.ztube.ui.components.EmptyState
+import com.ztube.ui.components.LocalSnackbar
 import com.ztube.ui.components.VideoRow
+import com.ztube.ui.components.ZTubeTopBar
+import kotlinx.coroutines.launch
 
-private val SECTIONS = listOf("History", "Playlists", "Subscriptions", "Downloads", "Settings")
+private val SECTIONS = listOf("History", "Playlists", "Subscriptions", "Downloads")
 
 @Composable
 fun LibraryScreen(
     onVideoClick: (String) -> Unit,
     onChannelClick: (String) -> Unit,
     onPlaylistClick: (Long) -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
-    var section by rememberSaveable { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(pageCount = { SECTIONS.size })
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -72,17 +77,31 @@ fun LibraryScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        PrimaryScrollableTabRow(selectedTabIndex = section, edgePadding = 0.dp) {
-            SECTIONS.forEachIndexed { index, label ->
-                Tab(selected = section == index, onClick = { section = index }, text = { Text(label) })
+        ZTubeTopBar {
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings")
             }
         }
-        when (section) {
-            0 -> HistorySection(viewModel, onVideoClick)
-            1 -> PlaylistsSection(viewModel, onPlaylistClick)
-            2 -> SubscriptionsSection(viewModel, onChannelClick)
-            3 -> DownloadsSection(viewModel, onVideoClick)
-            else -> SettingsSection(viewModel)
+        PrimaryScrollableTabRow(
+            selectedTabIndex = pagerState.currentPage,
+            edgePadding = 0.dp,
+            containerColor = MaterialTheme.colorScheme.background,
+        ) {
+            SECTIONS.forEachIndexed { index, label ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                    text = { Text(label) },
+                )
+            }
+        }
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> HistorySection(viewModel, onVideoClick)
+                1 -> PlaylistsSection(viewModel, onPlaylistClick)
+                2 -> SubscriptionsSection(viewModel, onChannelClick)
+                else -> DownloadsSection(viewModel, onVideoClick)
+            }
         }
     }
 }
@@ -90,15 +109,17 @@ fun LibraryScreen(
 @Composable
 private fun HistorySection(viewModel: LibraryViewModel, onVideoClick: (String) -> Unit) {
     val history by viewModel.history.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbar.current
+    var confirmClear by rememberSaveable { mutableStateOf(false) }
 
     if (history.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No history yet") }
+        EmptyState(Icons.Filled.History, "No history yet", "Videos you watch will show up here")
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = viewModel::clearHistory) { Text("Clear all") }
+                TextButton(onClick = { confirmClear = true }) { Text("Clear all") }
             }
         }
         items(history, key = { it.videoUrl }) { entry ->
@@ -108,28 +129,56 @@ private fun HistorySection(viewModel: LibraryViewModel, onVideoClick: (String) -
                 thumbnailUrl = entry.thumbnailUrl,
                 durationSeconds = entry.durationSeconds,
                 onClick = { onVideoClick(entry.videoUrl) },
+                modifier = Modifier.animateItem(),
             ) {
-                IconButton(onClick = { viewModel.removeHistory(entry.videoUrl) }) {
+                IconButton(
+                    onClick = {
+                        viewModel.removeHistory(entry)
+                        snackbar.show(
+                            "Removed from history",
+                            "Undo",
+                            onAction = { viewModel.restoreHistory(entry) },
+                        )
+                    },
+                ) {
                     Icon(Icons.Filled.Close, contentDescription = "Remove")
                 }
             }
         }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear watch history?") },
+            text = { Text("This removes all videos from your history.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearHistory()
+                        confirmClear = false
+                    },
+                ) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+        )
     }
 }
 
 @Composable
 private fun DownloadsSection(viewModel: LibraryViewModel, onVideoClick: (String) -> Unit) {
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbar.current
 
     if (downloads.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No downloads yet") }
+        EmptyState(Icons.Filled.Download, "No downloads yet", "Download videos from the player to watch offline")
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
         items(downloads, key = { it.videoUrl }) { download ->
             var menu by rememberSaveable { mutableStateOf(false) }
             val done = download.status == DownloadStatus.DONE
-            Column {
+            Column(Modifier.animateItem()) {
                 VideoRow(
                     title = download.title,
                     subtitle = "${download.uploader}\n${downloadStatus(download)}",
@@ -155,7 +204,13 @@ private fun DownloadsSection(viewModel: LibraryViewModel, onVideoClick: (String)
                                 text = { Text("Delete") },
                                 onClick = {
                                     menu = false
-                                    viewModel.deleteDownload(download.videoUrl)
+                                    viewModel.hideDownload(download.videoUrl)
+                                    snackbar.show(
+                                        "Download deleted",
+                                        "Undo",
+                                        onAction = { viewModel.restoreDownload(download.videoUrl) },
+                                        onDismiss = { viewModel.deleteDownload(download.videoUrl) },
+                                    )
                                 },
                             )
                         }
@@ -200,6 +255,7 @@ private fun PlaylistsSection(viewModel: LibraryViewModel, onPlaylistClick: (Long
         items(playlists, key = { it.id }) { playlist ->
             Column(
                 Modifier
+                    .animateItem()
                     .fillMaxWidth()
                     .clickable { onPlaylistClick(playlist.id) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -244,6 +300,7 @@ private fun PlaylistsSection(viewModel: LibraryViewModel, onPlaylistClick: (Long
 @Composable
 private fun SubscriptionsSection(viewModel: LibraryViewModel, onChannelClick: (String) -> Unit) {
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbar.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importSubscriptions(uri)
     }
@@ -258,43 +315,31 @@ private fun SubscriptionsSection(viewModel: LibraryViewModel, onChannelClick: (S
         items(subscriptions, key = { it.channelUrl }) { subscription ->
             Row(
                 Modifier
+                    .animateItem()
                     .fillMaxWidth()
                     .clickable { onChannelClick(subscription.channelUrl) }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AsyncImage(
-                    model = subscription.avatarUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                )
+                Avatar(url = subscription.avatarUrl, name = subscription.name, size = 44.dp)
                 Text(
                     subscription.name,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                 )
-                IconButton(onClick = { viewModel.unsubscribe(subscription.channelUrl) }) {
+                IconButton(
+                    onClick = {
+                        viewModel.unsubscribe(subscription)
+                        snackbar.show(
+                            "Unsubscribed from ${subscription.name}",
+                            "Undo",
+                            onAction = { viewModel.resubscribe(subscription) },
+                        )
+                    },
+                ) {
                     Icon(Icons.Filled.Close, contentDescription = "Unsubscribe")
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SettingsSection(viewModel: LibraryViewModel) {
-    val sponsorBlock by viewModel.sponsorBlockEnabled.collectAsStateWithLifecycle()
-
-    Row(
-        Modifier.fillMaxWidth().padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Skip sponsor segments", style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = sponsorBlock, onCheckedChange = viewModel::setSponsorBlockEnabled)
     }
 }

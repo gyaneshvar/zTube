@@ -31,7 +31,9 @@ class DownloadManager @Inject constructor(
 
     suspend fun retry(download: DownloadEntity) {
         dao.updateStatus(download.videoUrl, DownloadStatus.QUEUED)
-        enqueue(download.videoUrl, download.quality.removeSuffix("p").toIntOrNull() ?: 0)
+        val height = download.quality.removeSuffix("p").toIntOrNull()
+            ?: if (download.quality == DownloadStreams.AUDIO_ONLY_LABEL) 0 else DEFAULT_HEIGHT
+        enqueue(download.videoUrl, height)
     }
 
     suspend fun delete(videoUrl: String) {
@@ -48,6 +50,10 @@ class DownloadManager @Inject constructor(
             .build()
         WorkManager.getInstance(context)
             .enqueueUniqueWork(workName(videoUrl), ExistingWorkPolicy.KEEP, request)
+    }
+
+    private companion object {
+        const val DEFAULT_HEIGHT = 720
     }
 
     private fun workName(videoUrl: String) = "download:$videoUrl"

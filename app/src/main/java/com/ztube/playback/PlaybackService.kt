@@ -3,15 +3,18 @@ package com.ztube.playback
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -56,22 +59,50 @@ class PlaybackService : MediaSessionService() {
     private var segments: List<SkipSegment> = emptyList()
     private val skipped = mutableSetOf<Int>()
     private var sponsorBlockEnabled = true
+    private var autoplay = true
+    private var nextJob: Job? = null
+    private var recoveryJob: Job? = null
+    private var recoveryId: String? = null
+    private var recoveryAttempts = 0
+    private var lastMediaId: String? = null
+    private val played = mutableSetOf<String>()
+    private lateinit var player: ExoPlayer
 
     override fun onCreate() {
         super.onCreate()
-        val http = DefaultHttpDataSource.Factory()
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(50_000, 120_000, 1_000, 2_000)
+            .build()
+        val hlsDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(OkHttpDownloader.USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
-        val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(StreamMediaSourceFactory(DefaultDataSource.Factory(this, http)))
+        player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(
+                StreamMediaSourceFactory(
+                    DefaultDataSource.Factory(this, YoutubeHttpDataSourceFactory()),
+                    hlsDataSourceFactory,
+                ),
+            )
+            .setLoadControl(loadControl)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 loadSegments(mediaItem)
-                recordHistory(mediaItem)
+                val sameItem = mediaItem?.mediaId == lastMediaId
+                lastMediaId = mediaItem?.mediaId
+                if (!sameItem || reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                    recordHistory(mediaItem)
+                }
+                enqueueNext()
             }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) recoveryAttempts = 0
+            }
+
+            override fun onPlayerError(error: PlaybackException) = recover(error)
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) saveProgress(player)
@@ -91,6 +122,12 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player).setCallback(SessionCallback()).build()
 
         scope.launch { settings.sponsorBlockEnabled.collect { sponsorBlockEnabled = it } }
+        scope.launch {
+            settings.autoplay.collect {
+                autoplay = it
+                if (it) enqueueNext() else removeQueued()
+            }
+        }
         scope.launch { pollSegments(player) }
         scope.launch { pollProgress(player) }
     }
@@ -176,22 +213,111 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private suspend fun resolve(item: MediaItem): MediaItem {
+    private suspend fun resolve(item: MediaItem, fresh: Boolean = false): MediaItem {
         if (item.localConfiguration != null) return item
         resolveDownloaded(item)?.let { return it }
-        val info = repository.streamInfo(item.mediaId)
-        val quality = item.requestMetadata.extras?.getInt(EXTRA_QUALITY, 0)?.takeIf { it > 0 }
+        val requestExtras = item.requestMetadata.extras
+        val info = repository.streamInfo(item.mediaId, fresh || requestExtras?.getBoolean(EXTRA_FRESH) == true)
+        val quality = requestExtras?.getInt(EXTRA_QUALITY, 0)?.takeIf { it > 0 }
             ?: settings.quality.first()
         val stream = StreamSelector.resolve(info, quality)
         val extras = Bundle().apply {
             putString(EXTRA_VIDEO_ID, info.id)
             stream.audioUri?.let { putString(EXTRA_AUDIO_URL, it) }
+            if (stream.videoManifest != null && stream.audioManifest != null) {
+                putString(EXTRA_VIDEO_MANIFEST, stream.videoManifest)
+                putString(EXTRA_AUDIO_MANIFEST, stream.audioManifest)
+            }
         }
-        return item.buildUpon()
+        val builder = item.buildUpon()
             .setUri(stream.uri)
-            .setMimeType(if (stream.isDash) MimeTypes.APPLICATION_MPD else null)
+            .setMimeType(
+                when {
+                    stream.isDash -> MimeTypes.APPLICATION_MPD
+                    stream.isHls -> MimeTypes.APPLICATION_M3U8
+                    else -> null
+                },
+            )
             .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
+        if (stream.isHls) {
+            builder.setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder().setTargetOffsetMs(LIVE_EDGE_GAP_MS).build(),
+            )
+        }
+        return builder.build()
+    }
+
+    private fun enqueueNext() {
+        nextJob?.cancel()
+        val current = player.currentMediaItem ?: return
+        if (!autoplay || player.currentMediaItemIndex != player.mediaItemCount - 1) return
+        played.add(current.mediaId)
+        nextJob = scope.launch {
+            try {
+                val related = repository.related(repository.streamInfo(current.mediaId))
+                val next = related.firstOrNull { it.url !in played }
+                    ?: related.firstOrNull { it.url != current.mediaId }
+                    ?: return@launch
+                val resolved = resolve(
+                    videoMediaItem(
+                        next.url,
+                        next.title,
+                        next.uploader,
+                        next.thumbnailUrl,
+                        next.durationSeconds,
+                        settings.quality.first(),
+                    ),
+                )
+                val stillLast = player.currentMediaItem?.mediaId == current.mediaId &&
+                    player.currentMediaItemIndex == player.mediaItemCount - 1
+                if (autoplay && stillLast) player.addMediaItem(resolved)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Autoplay enqueue failed", e)
+            }
+        }
+    }
+
+    private fun removeQueued() {
+        nextJob?.cancel()
+        val next = player.currentMediaItemIndex + 1
+        if (next < player.mediaItemCount) player.removeMediaItems(next, player.mediaItemCount)
+    }
+
+    private fun recover(error: PlaybackException) {
+        if (!error.isStreamExpired()) return
+        val item = player.currentMediaItem ?: return
+        if (item.localConfiguration?.uri?.scheme == "file") return
+        if (recoveryId != item.mediaId) {
+            recoveryId = item.mediaId
+            recoveryAttempts = 0
+        }
+        if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) return
+        recoveryAttempts++
+        val position = player.currentPosition
+        val wasPlaying = player.playWhenReady
+        val request = MediaItem.Builder()
+            .setMediaId(item.mediaId)
+            .setMediaMetadata(item.mediaMetadata)
+            .setRequestMetadata(item.requestMetadata)
             .build()
+        recoveryJob?.cancel()
+        recoveryJob = scope.launch {
+            try {
+                val resolved = resolve(request, fresh = true)
+                if (player.currentMediaItem?.mediaId != item.mediaId) return@launch
+                val index = player.currentMediaItemIndex
+                player.replaceMediaItem(index, resolved)
+                player.seekTo(index, position)
+                player.prepare()
+                if (wasPlaying) player.play()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Stream recovery failed", e)
+            }
+        }
     }
 
     private suspend fun resolveDownloaded(item: MediaItem): MediaItem? {
@@ -244,5 +370,8 @@ class PlaybackService : MediaSessionService() {
     private companion object {
         const val POLL_INTERVAL_MS = 500L
         const val PROGRESS_INTERVAL_MS = 10_000L
+        const val MAX_RECOVERY_ATTEMPTS = 2
+        const val LIVE_EDGE_GAP_MS = 10_000L
+        const val TAG = "PlaybackService"
     }
 }

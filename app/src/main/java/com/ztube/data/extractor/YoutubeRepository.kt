@@ -3,77 +3,125 @@ package com.ztube.data.extractor
 import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.Image
+import org.schabi.newpipe.extractor.InfoItem
+import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
+import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class PagedVideos(
+    val items: List<VideoItem>,
+    val nextPage: Page?,
+)
 
 data class ChannelPage(
     val name: String,
     val avatarUrl: String?,
     val videos: List<VideoItem>,
+    val nextPage: Page? = null,
 )
+
+fun List<Image>.best(): String? = maxByOrNull { it.height }?.url
 
 @Singleton
 class YoutubeRepository @Inject constructor() {
 
     private val youtube = ServiceList.YouTube
 
-    suspend fun search(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
-        val handler = youtube.searchQHFactory.fromQuery(
-            query,
-            listOf(YoutubeSearchQueryHandlerFactory.VIDEOS),
-            "",
-        )
-        SearchInfo.getInfo(youtube, handler)
-            .relatedItems
-            .filterIsInstance<StreamInfoItem>()
-            .map { it.toVideoItem() }
+    private class CachedInfo(val info: StreamInfo, val at: Long)
+
+    private val infoCache = object : LinkedHashMap<String, CachedInfo>(CACHE_SIZE + 1, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedInfo>) = size > CACHE_SIZE
     }
 
-    private class CachedInfo(val url: String, val info: StreamInfo, val at: Long)
+    private val videosTabs = ConcurrentHashMap<String, ListLinkHandler>()
 
-    @Volatile
-    private var cachedInfo: CachedInfo? = null
+    suspend fun search(query: String): PagedVideos = withContext(Dispatchers.IO) {
+        val info = SearchInfo.getInfo(youtube, searchHandler(query))
+        PagedVideos(info.relatedItems.toVideos(), info.nextPage.validOrNull())
+    }
+
+    suspend fun searchMore(query: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
+        val more = SearchInfo.getMoreItems(youtube, searchHandler(query), page)
+        PagedVideos(more.items.toVideos(), more.nextPage.validOrNull())
+    }
 
     suspend fun streamInfo(url: String, fresh: Boolean = false): StreamInfo = withContext(Dispatchers.IO) {
-        val now = SystemClock.elapsedRealtime()
         if (!fresh) {
-            cachedInfo?.takeIf { it.url == url && now - it.at < CACHE_TTL_MS }?.let { return@withContext it.info }
+            val cached = synchronized(infoCache) { infoCache[url] }
+            if (cached != null && SystemClock.elapsedRealtime() - cached.at < CACHE_TTL_MS) {
+                return@withContext cached.info
+            }
         }
-        StreamInfo.getInfo(youtube, url).also { cachedInfo = CachedInfo(url, it, SystemClock.elapsedRealtime()) }
+        StreamInfo.getInfo(youtube, url).also {
+            synchronized(infoCache) { infoCache[url] = CachedInfo(it, SystemClock.elapsedRealtime()) }
+        }
     }
 
-    suspend fun channelUploads(channelUrl: String): List<VideoItem> = withContext(Dispatchers.IO) {
-        uploads(ChannelInfo.getInfo(youtube, channelUrl))
+    fun related(info: StreamInfo): List<VideoItem> = info.relatedItems.toVideos()
+
+    suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        youtube.suggestionExtractor.suggestionList(query)
+    }
+
+    suspend fun channelUploads(channelUrl: String): PagedVideos = withContext(Dispatchers.IO) {
+        uploads(channelUrl, ChannelInfo.getInfo(youtube, channelUrl))
+    }
+
+    suspend fun channelUploadsMore(channelUrl: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
+        val tab = videosTabs[channelUrl] ?: videosTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl)
+            ?: return@withContext PagedVideos(emptyList(), null)
+        val more = ChannelTabInfo.getMoreItems(youtube, tab, page)
+        PagedVideos(more.items.toVideos(), more.nextPage.validOrNull())
     }
 
     suspend fun channel(channelUrl: String): ChannelPage = withContext(Dispatchers.IO) {
         val info = ChannelInfo.getInfo(youtube, channelUrl)
+        val videos = uploads(channelUrl, info)
         ChannelPage(
             name = info.name.orEmpty(),
-            avatarUrl = info.avatars.firstOrNull()?.url,
-            videos = uploads(info),
+            avatarUrl = info.avatars.best(),
+            videos = videos.items,
+            nextPage = videos.nextPage,
         )
     }
 
-    private fun uploads(info: ChannelInfo): List<VideoItem> {
-        val videosTab = info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
-            ?: return emptyList()
-        return ChannelTabInfo.getInfo(youtube, videosTab)
-            .relatedItems
-            .filterIsInstance<StreamInfoItem>()
-            .map { it.toVideoItem() }
+    private fun uploads(channelUrl: String, info: ChannelInfo): PagedVideos {
+        val tab = videosTab(info, channelUrl) ?: return PagedVideos(emptyList(), null)
+        val tabInfo = ChannelTabInfo.getInfo(youtube, tab)
+        return PagedVideos(tabInfo.relatedItems.toVideos(), tabInfo.nextPage.validOrNull())
     }
+
+    private fun videosTab(info: ChannelInfo, channelUrl: String): ListLinkHandler? =
+        info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
+            ?.also { videosTabs[channelUrl] = it }
+
+    private fun searchHandler(query: String) = youtube.searchQHFactory.fromQuery(
+        query,
+        listOf(YoutubeSearchQueryHandlerFactory.VIDEOS),
+        "",
+    )
+
+    private fun Page?.validOrNull(): Page? = this?.takeIf { Page.isValid(it) }
+
+    private fun List<InfoItem>.toVideos(): List<VideoItem> =
+        filterIsInstance<StreamInfoItem>()
+            .map { it.toVideoItem() }
+            .distinctBy { it.url }
 
     private companion object {
         const val CACHE_TTL_MS = 30 * 60 * 1000L
+        const val CACHE_SIZE = 4
     }
 
     private fun StreamInfoItem.toVideoItem() = VideoItem(
@@ -81,10 +129,11 @@ class YoutubeRepository @Inject constructor() {
         title = name,
         uploader = uploaderName.orEmpty(),
         uploaderUrl = uploaderUrl.orEmpty(),
-        thumbnailUrl = thumbnails.firstOrNull()?.url,
+        thumbnailUrl = thumbnails.best(),
         durationSeconds = duration,
         viewCount = viewCount,
         uploadedText = textualUploadDate,
         uploadedAtMillis = uploadDate?.instant?.toEpochMilli(),
+        uploaderAvatarUrl = uploaderAvatars.best(),
     )
 }

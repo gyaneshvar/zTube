@@ -33,7 +33,9 @@ class PlayerConnection @Inject constructor(
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
 
-    private var controller: MediaController? = null
+    private val _controller = MutableStateFlow<MediaController?>(null)
+    val controller: StateFlow<MediaController?> = _controller.asStateFlow()
+
     private var pending: ListenableFuture<MediaController>? = null
 
     private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 1)
@@ -45,8 +47,8 @@ class PlayerConnection @Inject constructor(
 
     private val controllerListener = object : MediaController.Listener {
         override fun onDisconnected(controller: MediaController) {
-            if (this@PlayerConnection.controller === controller) {
-                this@PlayerConnection.controller = null
+            if (_controller.value === controller) {
+                _controller.value = null
                 pending = null
             }
             controller.release()
@@ -60,11 +62,11 @@ class PlayerConnection @Inject constructor(
     }
 
     fun connect() {
-        if (controller == null && pending == null) start()
+        if (_controller.value == null && pending == null) start()
     }
 
-    suspend fun controller(): MediaController {
-        controller?.let { return it }
+    suspend fun awaitController(): MediaController {
+        _controller.value?.let { return it }
         val future = pending ?: start()
         return suspendCancellableCoroutine { cont ->
             future.addListener(
@@ -81,12 +83,12 @@ class PlayerConnection @Inject constructor(
     }
 
     fun togglePlay() {
-        val player = controller ?: return
+        val player = _controller.value ?: return
         if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) player.pause() else player.play()
     }
 
     fun close() {
-        controller?.run {
+        _controller.value?.run {
             stop()
             clearMediaItems()
         }
@@ -102,7 +104,7 @@ class PlayerConnection @Inject constructor(
                     val connected = future.get()
                     connected.addListener(listener)
                     sync(connected)
-                    controller = connected
+                    _controller.value = connected
                 } catch (e: Exception) {
                     pending = null
                 }
