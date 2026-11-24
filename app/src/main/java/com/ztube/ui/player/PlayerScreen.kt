@@ -4,9 +4,11 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.view.View
 import androidx.activity.compose.BackHandler
@@ -321,7 +323,15 @@ fun PlayerScreen(
                     onAutoplay = viewModel::setAutoplay,
                     onRelatedClick = viewModel::playVideo,
                 )
-                is PlayerUiState.Error -> ErrorState(s.message, onRetry = viewModel::reload)
+                is PlayerUiState.Error -> ErrorState(
+                    s.message,
+                    onRetry = viewModel::reload,
+                    onOpenInYoutube = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.videoUrl)))
+                        }
+                    },
+                )
             }
         }
     }

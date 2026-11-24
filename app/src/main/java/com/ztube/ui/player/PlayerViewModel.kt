@@ -94,6 +94,7 @@ class PlayerViewModel @Inject constructor(
 
     private val currentUrl = MutableStateFlow(checkNotNull(savedStateHandle.get<String>("url")))
     private val url: String get() = currentUrl.value
+    val videoUrl: String get() = url
 
     private val _state = MutableStateFlow<PlayerUiState>(PlayerUiState.Loading)
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
