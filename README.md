@@ -88,3 +88,7 @@ app/src/main/java/com/ztube/
 ## Credits
 
 Built on the excellent work of [NewPipe](https://github.com/TeamNewPipe/NewPipe) / NewPipeExtractor and [SponsorBlock](https://sponsor.ajay.app/).
+
+## License
+
+[GPL-3.0](LICENSE) — same as NewPipeExtractor, which zTube bundles.
