@@ -36,7 +36,7 @@ class FeedRepository @Inject constructor(
                     launch {
                         val videos = limit.withPermit {
                             try {
-                                repository.channelUploads(url).items.take(PER_CHANNEL)
+                                fetch(url)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -52,6 +52,21 @@ class FeedRepository @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun fetch(url: String): List<VideoItem> {
+        try {
+            val videos = repository.channelFeed(url).take(PER_CHANNEL)
+            if (videos.isNotEmpty()) {
+                DebugLog.log("Feed", "feed rss $url")
+                return videos
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+        DebugLog.log("Feed", "feed fallback $url")
+        return repository.channelUploads(url).items.take(PER_CHANNEL)
     }
 
     private fun merged(channelUrls: List<String>): List<VideoItem> = channelUrls

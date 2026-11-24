@@ -11,12 +11,12 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
+import org.schabi.newpipe.extractor.feed.FeedInfo
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,7 +45,9 @@ class YoutubeRepository @Inject constructor() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedInfo>) = size > CACHE_SIZE
     }
 
-    private val videosTabs = ConcurrentHashMap<String, ListLinkHandler>()
+    private val videosTabs = object : LinkedHashMap<String, ListLinkHandler>(TABS_SIZE + 1, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ListLinkHandler>) = size > TABS_SIZE
+    }
 
     suspend fun search(query: String): PagedVideos = withContext(Dispatchers.IO) {
         DebugLog.log("Repo", "search")
@@ -87,9 +89,14 @@ class YoutubeRepository @Inject constructor() {
         uploads(channelUrl, ChannelInfo.getInfo(youtube, channelUrl))
     }
 
+    suspend fun channelFeed(channelUrl: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "channelFeed $channelUrl")
+        FeedInfo.getInfo(youtube, channelUrl).relatedItems.toVideos()
+    }
+
     suspend fun channelUploadsMore(channelUrl: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
         DebugLog.log("Repo", "channelUploadsMore $channelUrl")
-        val tab = videosTabs[channelUrl] ?: videosTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl)
+        val tab = synchronized(videosTabs) { videosTabs[channelUrl] } ?: videosTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl)
             ?: return@withContext PagedVideos(emptyList(), null)
         val more = ChannelTabInfo.getMoreItems(youtube, tab, page)
         PagedVideos(more.items.toVideos(), more.nextPage.validOrNull())
@@ -115,7 +122,7 @@ class YoutubeRepository @Inject constructor() {
 
     private fun videosTab(info: ChannelInfo, channelUrl: String): ListLinkHandler? =
         info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
-            ?.also { videosTabs[channelUrl] = it }
+            ?.also { synchronized(videosTabs) { videosTabs[channelUrl] = it } }
 
     private fun searchHandler(query: String) = youtube.searchQHFactory.fromQuery(
         query,
@@ -133,6 +140,7 @@ class YoutubeRepository @Inject constructor() {
     private companion object {
         const val CACHE_TTL_MS = 30 * 60 * 1000L
         const val CACHE_SIZE = 4
+        const val TABS_SIZE = 8
     }
 
     private fun StreamInfoItem.toVideoItem() = VideoItem(
