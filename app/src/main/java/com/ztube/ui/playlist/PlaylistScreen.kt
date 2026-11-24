@@ -31,20 +31,23 @@ fun PlaylistScreen(
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val videos by viewModel.videos.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
+    val readOnly = playlist?.youtubePlaylistId != null
 
     Column(Modifier.fillMaxSize()) {
         BackTopBar(
             title = playlist?.name.orEmpty(),
             onBack = onBack,
             actions = {
-                TextButton(
-                    onClick = {
-                        viewModel.deletePlaylist { restore ->
-                            onDeleted()
-                            snackbar.show("Playlist deleted", "Undo", onAction = restore)
-                        }
-                    },
-                ) { Text("Delete") }
+                if (!readOnly) {
+                    TextButton(
+                        onClick = {
+                            viewModel.deletePlaylist { restore ->
+                                onDeleted()
+                                snackbar.show("Playlist deleted", "Undo", onAction = restore)
+                            }
+                        },
+                    ) { Text("Delete") }
+                }
             },
         )
         if (videos.isEmpty()) {
@@ -60,17 +63,19 @@ fun PlaylistScreen(
                     onClick = { onVideoClick(video.videoUrl) },
                     modifier = Modifier.animateItem(),
                 ) {
-                    IconButton(
-                        onClick = {
-                            viewModel.removeVideo(video)
-                            snackbar.show(
-                                "Removed from playlist",
-                                "Undo",
-                                onAction = { viewModel.restoreVideo(video) },
-                            )
-                        },
-                    ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Remove")
+                    if (!readOnly) {
+                        IconButton(
+                            onClick = {
+                                viewModel.removeVideo(video)
+                                snackbar.show(
+                                    "Removed from playlist",
+                                    "Undo",
+                                    onAction = { viewModel.restoreVideo(video) },
+                                )
+                            },
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = "Remove")
+                        }
                     }
                 }
             }

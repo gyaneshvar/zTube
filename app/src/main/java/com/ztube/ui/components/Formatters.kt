@@ -1,5 +1,6 @@
 package com.ztube.ui.components
 
+import android.text.format.DateUtils
 import com.ztube.data.extractor.VideoItem
 import java.util.Locale
 
@@ -31,3 +32,6 @@ fun videoMeta(video: VideoItem, withUploader: Boolean = true): String = listOfNo
     video.viewCount.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
     video.uploadedText?.takeIf { it.isNotEmpty() },
 ).joinToString(" · ")
+
+fun formatTimeAgo(millis: Long): String =
+    DateUtils.getRelativeTimeSpanString(millis, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()

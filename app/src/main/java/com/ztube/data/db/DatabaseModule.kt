@@ -17,7 +17,7 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): ZTubeDatabase =
         Room.databaseBuilder(context, ZTubeDatabase::class.java, "ztube.db")
-            .fallbackToDestructiveMigration(true)
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides

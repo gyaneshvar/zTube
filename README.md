@@ -28,6 +28,7 @@ Requires **Android 8.0 (API 26)** or newer. Updates install over the previous ve
 | **Offline downloads** | Pick a quality or audio-only; resumable; plays in airplane mode |
 | **Local library** | Subscriptions feed, watch history with resume, playlists |
 | **Takeout import** | Import your YouTube subscriptions from Google Takeout `subscriptions.csv` |
+| **Google sign-in** | Optional, read-only import of your YouTube subscriptions and playlists (see below) |
 | **Gestures** | Double-tap left/right edge to seek ±10 s, rotate for fullscreen |
 | **Live streams** | HLS live playback |
 
@@ -47,6 +48,25 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Install on a 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Google sign-in (optional)
+
+Signing in with Google imports your YouTube subscriptions and playlists and keeps them in sync (daily, or via **Sync now** in Settings). It is strictly read-only: zTube never changes anything on your YouTube account. Synced data stays on your device, and access tokens are never stored — they are requested from Google Play services whenever a sync runs.
+
+- Works only for Gmail accounts that were added as test users of this build (up to 100). Other accounts see "access blocked"; the Takeout import still works for everyone.
+- The app stays in Google's Testing mode, so sign-in expires every 7 days — Settings shows "Sign in again" when that happens.
+- YouTube playlists are read-only in zTube. Signing out lets you keep the synced items as local ones or remove them; anything you added in zTube is always kept.
+
+### Set up your own Google Cloud project
+
+If you build from source, sign-in needs your own OAuth client:
+
+1. Create a Google Cloud project and enable **YouTube Data API v3**.
+2. Configure the OAuth consent screen: user type **External**, publishing status **Testing**, scopes `youtube.readonly` and `email`.
+3. Add every Gmail account that should sign in as a test user.
+4. Create an **Android** OAuth client with package name `com.ztube` and the SHA-1 of the key you sign with (debug key: `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`).
+
+No client ID or API key goes into the code. Only APKs signed with the registered key can sign in.
 
 ## Tech stack
 
@@ -82,7 +102,7 @@ app/src/main/java/com/ztube/
 ## Known limitations
 
 - YouTube changes break extraction from time to time — the fix is usually bumping `NewPipeExtractor` in `gradle/libs.versions.toml`.
-- No Google sign-in: subscriptions and history are local only (import via Takeout).
+- Google sign-in imports subscriptions and playlists only (no history or home feed) and works for test users only; watch history stays local.
 - Release APKs are signed with a debug key — fine for sideloading, not for the Play Store.
 
 ## Credits

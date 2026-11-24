@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -18,6 +20,7 @@ data class HomeUiState(
     val hasSubscriptions: Boolean = true,
     val videos: List<VideoItem> = emptyList(),
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val error: String? = null,
 )
 
@@ -35,20 +38,32 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(subscriptionDao.all(), refreshKey) { subs, key -> subs to key }
-                .collectLatest { (subs, key) ->
+            val channelUrls = subscriptionDao.all()
+                .map { subs -> subs.map { it.channelUrl }.toSet() }
+                .distinctUntilChanged()
+            combine(channelUrls, refreshKey) { urls, key -> urls to key }
+                .collectLatest { (urls, key) ->
                     val force = key != handledKey
                     handledKey = key
-                    if (subs.isEmpty()) {
+                    if (urls.isEmpty()) {
                         _state.value = HomeUiState(hasSubscriptions = false, loading = false)
                         return@collectLatest
                     }
-                    _state.value = _state.value.copy(hasSubscriptions = true, loading = true, error = null)
-                    val videos = feed.feed(subs.map { it.channelUrl }, force)
-                    _state.value = HomeUiState(
-                        videos = videos,
+                    _state.value = _state.value.copy(
+                        hasSubscriptions = true,
+                        loading = true,
+                        refreshing = force,
+                        error = null,
+                    )
+                    var first = true
+                    feed.feed(urls.toList(), force).collect { videos ->
+                        _state.value = _state.value.copy(videos = videos, refreshing = false)
+                        first = false
+                    }
+                    _state.value = _state.value.copy(
                         loading = false,
-                        error = if (videos.isEmpty()) "Couldn't load feed" else null,
+                        refreshing = false,
+                        error = if (first) "Couldn't load feed" else null,
                     )
                 }
         }

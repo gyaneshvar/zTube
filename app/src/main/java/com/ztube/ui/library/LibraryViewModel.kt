@@ -94,16 +94,16 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun unsubscribe(subscription: SubscriptionEntity) {
-        viewModelScope.launch { subscriptionDao.delete(subscription.channelUrl) }
+        viewModelScope.launch { subscriptionDao.unsubscribe(subscription.channelUrl) }
     }
 
-    suspend fun resubscribe(subscription: SubscriptionEntity) = subscriptionDao.insert(subscription)
+    suspend fun resubscribe(subscription: SubscriptionEntity) = subscriptionDao.restore(subscription)
 
     fun importSubscriptions(uri: Uri) {
         viewModelScope.launch {
             val message = try {
                 val channels = withContext(Dispatchers.IO) { readChannels(uri) }
-                val inserted = subscriptionDao.insertAll(channels).count { it != -1L }
+                val inserted = subscriptionDao.importAll(channels)
                 "Imported $inserted subscriptions"
             } catch (e: Exception) {
                 "Import failed: ${e.message ?: "unreadable file"}"
