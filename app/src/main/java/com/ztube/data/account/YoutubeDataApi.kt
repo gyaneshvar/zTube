@@ -95,18 +95,33 @@ class YoutubeDataApi @Inject constructor() {
                 .addQueryParameter("id", batch.joinToString(","))
                 .addQueryParameter("maxResults", BATCH.toString())
                 .build()
-            forEach(get(token, url)) { item ->
-                val snippet = item.getJSONObject("snippet")
-                result += YoutubeVideo(
-                    item.getString("id"),
-                    snippet.optString("title"),
-                    snippet.optString("channelTitle"),
-                    thumbnail(snippet),
-                    seconds(item.getJSONObject("contentDetails").optString("duration")),
-                )
-            }
+            forEach(get(token, url)) { item -> result += video(item) }
         }
         return result
+    }
+
+    suspend fun likedVideos(token: String): List<YoutubeVideo>? {
+        val result = mutableListOf<YoutubeVideo>()
+        try {
+            pages(token, api("videos").addQueryParameter("part", "snippet,contentDetails").addQueryParameter("myRating", "like")) { page ->
+                forEach(page) { item -> result += video(item) }
+            }
+        } catch (e: YoutubeApiException) {
+            if (e.code == 404 || e.code == 403) return null
+            throw e
+        }
+        return result
+    }
+
+    private fun video(item: JSONObject): YoutubeVideo {
+        val snippet = item.getJSONObject("snippet")
+        return YoutubeVideo(
+            item.getString("id"),
+            snippet.optString("title"),
+            snippet.optString("channelTitle"),
+            thumbnail(snippet),
+            seconds(item.getJSONObject("contentDetails").optString("duration")),
+        )
     }
 
     private suspend fun pages(token: String, builder: HttpUrl.Builder, onPage: (JSONObject) -> Unit) {

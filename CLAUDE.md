@@ -18,6 +18,7 @@ Single module `app/`, package `com.ztube`, Hilt everywhere, Compose + Material 3
 - `data/db` — Room `ZTubeDatabase`: subscriptions, history, playlists, playlist videos, downloads.
 - `data/feed` — `FeedRepository`: subscription feed persisted in Room (`feed_videos`, `feed_channels`) and refreshed per channel when stale (45 min); Home reads the DB, `FeedRefreshWorker` refreshes every 8 h on unmetered network.
 - `data/prefs` — DataStore `SettingsRepository` (speed, quality, autoplay, SponsorBlock, recents, Google account state).
+- `data/update` — `UpdateChecker` (GitHub `releases/latest`, checked on app open at most every 12 h, per-version 3-day snooze); the dialog is `ui/update` (`UpdateViewModel` + `UpdateHost`, hosted in `ZTubeRoot`, manual check in Settings).
 - `data/sponsorblock` — SponsorBlock client (hashed lookup).
 - `data/account` — optional Google sign-in (`GoogleAuth` on `AuthorizationClient`), YouTube Data API v3 client, `YoutubeSync` (read-only mirror of subscriptions + playlists), `YoutubeSyncWorker` (daily periodic, plus a one-time run enqueued on app foreground when the last sync is over 4 hours old), `YoutubeAccountManager` (entry point for UI). The sign-in flow is shared by Settings and the once-per-version first-launch prompt (`ui/account`: `GoogleSignInViewModel` + `GoogleSignInHost`).
 - `playback` — `PlaybackService` (`MediaSessionService` owning ExoPlayer). A `MediaItem`'s `mediaId` is the YouTube URL and is resolved in `onAddMediaItems`: finished downloads first, otherwise NewPipe streams wrapped as DASH and merged. Custom `YoutubeHttpDataSourceFactory` sets the per-client User-Agent and request params. The service owns autoplay and error recovery (re-resolve and resume). UI talks to it through the `PlayerConnection` singleton (`MediaController`).
@@ -47,6 +48,8 @@ Match neighbouring files: plain Kotlin, simple, no clever abstractions. Near-zer
 2. `./gradlew assembleDebug -q`, copy the APK to `zTube-<version>.apk`.
 3. `gh release create v<version> <apk> --repo gyaneshvar/zTube --target main --title "zTube <version>" --notes-file <notes> --latest`.
 4. Check the download link returns a valid APK (starts with `PK`).
+
+The in-app update checker reads `releases/latest`, so the tag must be `v<versionName>` and the APK asset name must end in `.apk`.
 
 The README links to `releases/latest`, so it needs no change per release.
 

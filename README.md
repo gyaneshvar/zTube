@@ -51,11 +51,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Google sign-in (optional)
 
-Signing in with Google imports your YouTube subscriptions and playlists and keeps them in sync: a sign-in prompt appears once on first launch and once after each update while you're signed out, the app syncs when you open it if the last sync is over 4 hours old, plus a daily background sync, and **Sync now** in the You tab syncs manually. It is strictly read-only: zTube never changes anything on your YouTube account. Synced data stays on your device, and access tokens are never stored — they are requested from Google Play services whenever a sync runs.
+Signing in with Google imports your YouTube subscriptions, playlists and Liked videos (the most recent 1000) and keeps them in sync: a sign-in prompt appears once on first launch and once after each update while you're signed out, the app syncs when you open it if the last sync is over 4 hours old, plus a daily background sync, and **Sync now** in the You tab syncs manually. It is strictly read-only: zTube never changes anything on your YouTube account. Synced data stays on your device, and access tokens are never stored — they are requested from Google Play services whenever a sync runs.
 
 - Works only for Gmail accounts that were added as test users of this build (up to 100). Other accounts see "access blocked"; the Takeout import still works for everyone.
 - The app stays in Google's Testing mode, so sign-in expires every 7 days — the You tab shows "Sign in again" when that happens.
-- YouTube playlists are read-only in zTube. Signing out lets you keep the synced items as local ones or remove them; anything you added in zTube is always kept.
+- YouTube playlists, including Liked videos, are read-only in zTube. Signing out lets you keep the synced items as local ones or remove them; anything you added in zTube is always kept.
+
+## Updates
+
+When you open the app, zTube checks GitHub releases for a newer version (at most once every 12 hours) and offers to download it; **Later** hides that version for 3 days. **Check for updates** in the You tab checks on demand.
 
 ### Set up your own Google Cloud project
 

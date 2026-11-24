@@ -101,6 +101,23 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[SIGN_IN_PROMPT_VERSION] = version }
     }
 
+    suspend fun updateLastCheckAt(): Long = context.dataStore.data.first()[UPDATE_LAST_CHECK_AT] ?: 0L
+
+    suspend fun setUpdateLastCheckAt(at: Long) {
+        context.dataStore.edit { it[UPDATE_LAST_CHECK_AT] = at }
+    }
+
+    suspend fun updateSnoozedVersion(): String? = context.dataStore.data.first()[UPDATE_SNOOZED_VERSION]
+
+    suspend fun updateSnoozedUntil(): Long = context.dataStore.data.first()[UPDATE_SNOOZED_UNTIL] ?: 0L
+
+    suspend fun setUpdateSnoozed(version: String, until: Long) {
+        context.dataStore.edit {
+            it[UPDATE_SNOOZED_VERSION] = version
+            it[UPDATE_SNOOZED_UNTIL] = until
+        }
+    }
+
     suspend fun setAutoplay(enabled: Boolean) {
         context.dataStore.edit { it[AUTOPLAY] = enabled }
     }
@@ -154,6 +171,9 @@ class SettingsRepository @Inject constructor(
         val LAST_SYNC_ATTEMPT_AT = longPreferencesKey("youtube_last_sync_attempt_at")
         val NEEDS_REAUTH = booleanPreferencesKey("needs_reauth")
         val SIGN_IN_PROMPT_VERSION = longPreferencesKey("sign_in_prompt_version")
+        val UPDATE_LAST_CHECK_AT = longPreferencesKey("update_last_check_at")
+        val UPDATE_SNOOZED_VERSION = stringPreferencesKey("update_snoozed_version")
+        val UPDATE_SNOOZED_UNTIL = longPreferencesKey("update_snoozed_until")
         const val MAX_RECENT = 15
     }
 }
