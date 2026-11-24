@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -66,7 +65,6 @@ fun LibraryScreen(
     onVideoClick: (String) -> Unit,
     onChannelClick: (String) -> Unit,
     onPlaylistClick: (Long) -> Unit,
-    onOpenSettings: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val pagerState = rememberPagerState(pageCount = { SECTIONS.size })
@@ -78,11 +76,7 @@ fun LibraryScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        ZTubeTopBar {
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
-            }
-        }
+        ZTubeTopBar()
         PrimaryScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             edgePadding = 0.dp,

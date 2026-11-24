@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.withTransaction
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.ztube.data.db.PlaylistDao
@@ -73,6 +75,7 @@ class YoutubeAccountManager @Inject constructor(
     suspend fun signOut(keepItems: Boolean) = withContext(NonCancellable) {
         sync.mutex.withLock {
             WorkManager.getInstance(context).cancelUniqueWork(YoutubeSyncWorker.WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork(YoutubeSyncWorker.WORK_NAME_NOW)
             val email = settings.youtubeAccount.first()?.email
             db.withTransaction {
                 if (keepItems) {
@@ -90,6 +93,19 @@ class YoutubeAccountManager @Inject constructor(
         }
     }
 
+    suspend fun syncIfStale() {
+        val account = settings.youtubeAccount.first() ?: return
+        if (account.needsReauth) return
+        val now = System.currentTimeMillis()
+        if (listOf(account.lastSyncedAt, account.lastSyncAttemptAt).any { it != null && now - it < STALE_AFTER_MS }) return
+        settings.setSyncAttempted(now)
+        val request = OneTimeWorkRequestBuilder<YoutubeSyncWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(YoutubeSyncWorker.WORK_NAME_NOW, ExistingWorkPolicy.KEEP, request)
+    }
+
     suspend fun scheduleIfSignedIn() {
         if (settings.youtubeAccount.first() != null) schedule()
     }
@@ -100,5 +116,9 @@ class YoutubeAccountManager @Inject constructor(
             .build()
         WorkManager.getInstance(context)
             .enqueueUniquePeriodicWork(YoutubeSyncWorker.WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+    }
+
+    private companion object {
+        val STALE_AFTER_MS = TimeUnit.HOURS.toMillis(4)
     }
 }

@@ -49,9 +49,10 @@ class MainActivity : ComponentActivity() {
         val showSplashInitially = savedInstanceState == null
         setContent {
             ZTubeTheme {
+                var splashVisible by rememberSaveable { mutableStateOf(showSplashInitially) }
                 Box(Modifier.fillMaxSize()) {
-                    ZTubeRoot()
-                    SplashOverlay(showSplashInitially)
+                    ZTubeRoot(splashVisible)
+                    SplashOverlay(splashVisible) { splashVisible = false }
                 }
             }
         }
@@ -82,11 +83,10 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun SplashOverlay(showInitially: Boolean) {
-        var visible by rememberSaveable { mutableStateOf(showInitially) }
+    private fun SplashOverlay(visible: Boolean, onDismiss: () -> Unit) {
         LaunchedEffect(Unit) {
             delay(1500)
-            visible = false
+            onDismiss()
         }
         AnimatedVisibility(visible = visible, exit = fadeOut(tween(300))) {
             Box(
@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) { visible = false },
+                    ) { onDismiss() },
                 contentAlignment = Alignment.Center,
             ) {
                 Image(

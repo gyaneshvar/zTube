@@ -7,17 +7,24 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -33,6 +40,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.media3.common.MediaItem
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -45,9 +56,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil3.compose.AsyncImage
+import com.ztube.data.prefs.YoutubeAccount
+import com.ztube.ui.account.AccountTabViewModel
+import com.ztube.ui.account.SignInPrompt
 import com.ztube.ui.channel.ChannelScreen
 import com.ztube.ui.components.AppSnackbar
 import com.ztube.ui.components.LocalSnackbar
+import com.ztube.ui.components.rememberImageRequest
 import com.ztube.ui.home.HomeScreen
 import com.ztube.ui.library.LibraryScreen
 import com.ztube.ui.player.MiniPlayer
@@ -66,18 +82,23 @@ private enum class Tab(
     Home("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
     Search("search", "Search", Icons.Outlined.Search, Icons.Filled.Search),
     Library("library", "Library", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
+    You("you", "You", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
 }
 
 private const val PLAYER_ROUTE = "player/{url}"
 private const val CHANNEL_ROUTE = "channel/{url}"
 private const val PLAYLIST_ROUTE = "playlist/{id}"
-private const val SETTINGS_ROUTE = "settings"
 
 @Composable
-fun ZTubeRoot(miniPlayer: MiniPlayerViewModel = hiltViewModel()) {
+fun ZTubeRoot(
+    splashVisible: Boolean,
+    miniPlayer: MiniPlayerViewModel = hiltViewModel(),
+    accountTab: AccountTabViewModel = hiltViewModel(),
+) {
     val navController = rememberNavController()
     val miniItem by miniPlayer.item.collectAsStateWithLifecycle()
     val miniPlaying by miniPlayer.playing.collectAsStateWithLifecycle()
+    val account by accountTab.account.collectAsStateWithLifecycle()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
     val onPlayer = destination?.route == PLAYER_ROUTE
@@ -99,6 +120,7 @@ fun ZTubeRoot(miniPlayer: MiniPlayerViewModel = hiltViewModel()) {
     }
 
     CompositionLocalProvider(LocalSnackbar provides appSnackbar) {
+        SignInPrompt(splashVisible)
         Scaffold(
             contentWindowInsets = WindowInsets(0),
             snackbarHost = { SnackbarHost(snackbarHost) },
@@ -132,10 +154,14 @@ fun ZTubeRoot(miniPlayer: MiniPlayerViewModel = hiltViewModel()) {
                                     selected = selected,
                                     onClick = { openTab(tab) },
                                     icon = {
-                                        Icon(
-                                            if (selected) tab.selectedIcon else tab.icon,
-                                            contentDescription = tab.label,
-                                        )
+                                        if (tab == Tab.You) {
+                                            YouTabIcon(account, selected)
+                                        } else {
+                                            Icon(
+                                                if (selected) tab.selectedIcon else tab.icon,
+                                                contentDescription = tab.label,
+                                            )
+                                        }
                                     },
                                     label = { Text(tab.label) },
                                 )
@@ -167,8 +193,10 @@ fun ZTubeRoot(miniPlayer: MiniPlayerViewModel = hiltViewModel()) {
                         onVideoClick = ::openVideo,
                         onChannelClick = ::openChannel,
                         onPlaylistClick = { navController.navigate("playlist/$it") },
-                        onOpenSettings = { navController.navigate(SETTINGS_ROUTE) },
                     )
+                }
+                composable(Tab.You.route) {
+                    SettingsScreen()
                 }
                 composable(
                     PLAYER_ROUTE,
@@ -196,10 +224,30 @@ fun ZTubeRoot(miniPlayer: MiniPlayerViewModel = hiltViewModel()) {
                         onDeleted = { navController.popBackStack() },
                     )
                 }
-                composable(SETTINGS_ROUTE) {
-                    SettingsScreen(onBack = { navController.popBackStack() })
-                }
             }
+        }
+    }
+}
+
+@Composable
+private fun YouTabIcon(account: YoutubeAccount?, selected: Boolean) {
+    val avatar = account?.channelAvatar
+    BadgedBox(
+        badge = { if (account?.needsReauth == true) Badge() },
+    ) {
+        if (avatar != null) {
+            val ring = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+            AsyncImage(
+                model = rememberImageRequest(avatar),
+                contentDescription = Tab.You.label,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(24.dp).clip(CircleShape).border(2.dp, ring, CircleShape),
+            )
+        } else {
+            Icon(
+                if (selected) Tab.You.selectedIcon else Tab.You.icon,
+                contentDescription = Tab.You.label,
+            )
         }
     }
 }

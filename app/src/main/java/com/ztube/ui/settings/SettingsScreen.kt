@@ -1,8 +1,5 @@
 package com.ztube.ui.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +11,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -32,37 +32,57 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ztube.data.prefs.YoutubeAccount
+import com.ztube.ui.account.GoogleSignInHost
+import com.ztube.ui.account.GoogleSignInViewModel
 import com.ztube.ui.components.Avatar
-import com.ztube.ui.components.BackTopBar
 import com.ztube.ui.components.LocalSnackbar
 import com.ztube.ui.components.SwitchRow
+import com.ztube.ui.components.TitleTopBar
 import com.ztube.ui.components.formatTimeAgo
 
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
+    signIn: GoogleSignInViewModel = hiltViewModel(),
 ) {
     val sponsorBlock by viewModel.sponsorBlockEnabled.collectAsStateWithLifecycle()
     val autoplay by viewModel.autoplay.collectAsStateWithLifecycle()
     val account by viewModel.account.collectAsStateWithLifecycle()
-    val working by viewModel.working.collectAsStateWithLifecycle()
-    val differentAccount by viewModel.differentAccount.collectAsStateWithLifecycle()
+    val syncing by viewModel.working.collectAsStateWithLifecycle()
+    val signInWorking by signIn.working.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
-
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
-        viewModel.onAuthorizationResult(it.data)
-    }
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.show(it) }
     }
-    LaunchedEffect(Unit) {
-        viewModel.resolutions.collect { launcher.launch(IntentSenderRequest.Builder(it).build()) }
-    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        BackTopBar("Settings", onBack)
+        TitleTopBar("You")
+        Text(
+            "YouTube account",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        )
+        val current = account
+        if (current == null) {
+            SignedOut(working = signInWorking, onSignIn = { signIn.signIn(null) })
+        } else {
+            SignedIn(
+                account = current,
+                working = syncing || signInWorking,
+                syncing = syncing,
+                onSync = viewModel::syncNow,
+                onSignInAgain = { signIn.signIn(current.email) },
+                onSignOut = viewModel::signOut,
+            )
+        }
+        Text(
+            "Settings",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
+        )
         SwitchRow(
             title = "Skip sponsor segments",
             checked = sponsorBlock,
@@ -74,48 +94,9 @@ fun SettingsScreen(
             checked = autoplay,
             onCheckedChange = viewModel::setAutoplay,
         )
-        Text(
-            "YouTube account",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
-        )
-        val current = account
-        if (current == null) {
-            SignedOut(working = working, onSignIn = { viewModel.signIn(null) })
-        } else {
-            SignedIn(
-                account = current,
-                working = working,
-                onSync = viewModel::syncNow,
-                onSignInAgain = { viewModel.signIn(current.email) },
-                onSignOut = viewModel::signOut,
-            )
-        }
     }
 
-    differentAccount?.let { prompt ->
-        AlertDialog(
-            onDismissRequest = viewModel::dismissDifferentAccount,
-            title = { Text("Switch account?") },
-            text = {
-                Text(
-                    "You're signed in as ${prompt.oldEmail}. What should happen to the channels and playlists " +
-                        "synced from it before signing in as ${prompt.newEmail}? " +
-                        "Channels and playlists you added in zTube are kept.",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.confirmDifferentAccount(keepItems = true) }) { Text("Keep synced items") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = viewModel::dismissDifferentAccount) { Text("Cancel") }
-                    TextButton(onClick = { viewModel.confirmDifferentAccount(keepItems = false) }) { Text("Remove them") }
-                }
-            },
-        )
-    }
+    GoogleSignInHost(signIn)
 }
 
 @Composable
@@ -135,6 +116,7 @@ private fun SignedOut(working: Boolean, onSignIn: () -> Unit) {
 private fun SignedIn(
     account: YoutubeAccount,
     working: Boolean,
+    syncing: Boolean,
     onSync: () -> Unit,
     onSignInAgain: () -> Unit,
     onSignOut: (Boolean) -> Unit,
@@ -153,6 +135,14 @@ private fun SignedIn(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            TextButton(onClick = onSync, enabled = !working && !account.needsReauth) {
+                if (syncing) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Text("Sync now", modifier = Modifier.padding(start = 8.dp))
+            }
         }
         if (account.needsReauth) {
             Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
@@ -170,16 +160,7 @@ private fun SignedIn(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = onSync, enabled = !working && !account.needsReauth) {
-                if (working) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("Sync now")
-                }
-            }
-            OutlinedButton(onClick = { confirmSignOut = true }, enabled = !working) { Text("Sign out") }
-        }
+        OutlinedButton(onClick = { confirmSignOut = true }, enabled = !working) { Text("Sign out") }
     }
 
     if (confirmSignOut) {

@@ -64,6 +64,15 @@ fun ZTubeTopBar(actions: @Composable RowScope.() -> Unit = {}) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun TitleTopBar(title: String) {
+    TopAppBar(
+        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     TopAppBar(
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },

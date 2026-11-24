@@ -2,6 +2,9 @@ package com.ztube
 
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.ztube.data.account.YoutubeAccountManager
 import dagger.hilt.android.HiltAndroidApp
@@ -24,6 +27,12 @@ class ZTubeApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         NewPipe.init(OkHttpDownloader())
-        CoroutineScope(Dispatchers.Default).launch { accountManager.scheduleIfSignedIn() }
+        val scope = CoroutineScope(Dispatchers.Default)
+        scope.launch { accountManager.scheduleIfSignedIn() }
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                scope.launch { accountManager.syncIfStale() }
+            }
+        })
     }
 }
