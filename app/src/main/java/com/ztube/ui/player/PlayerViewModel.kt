@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import com.ztube.DebugLog
 import com.ztube.data.db.DownloadDao
 import com.ztube.data.db.DownloadEntity
 import com.ztube.data.db.HistoryDao
@@ -169,6 +170,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     init {
+        DebugLog.log("Player", "init $url")
         connection.connect()
         viewModelScope.launch { connection.errors.collect { _playbackError.value = it } }
         viewModelScope.launch {
@@ -206,6 +208,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun load(target: String, startPlayback: Boolean) {
+        DebugLog.log("Player", "load $target start=$startPlayback")
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val saved = downloadDao.get(target)?.takeIf { it.status == DownloadStatus.DONE }
@@ -447,6 +450,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        DebugLog.log("Player", "onCleared")
         pipState.canEnter.value = false
         attached?.removeListener(listener)
     }

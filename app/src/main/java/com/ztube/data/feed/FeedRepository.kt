@@ -1,5 +1,6 @@
 package com.ztube.data.feed
 
+import com.ztube.DebugLog
 import com.ztube.data.extractor.VideoItem
 import com.ztube.data.extractor.YoutubeRepository
 import kotlinx.coroutines.CancellationException
@@ -27,6 +28,7 @@ class FeedRepository @Inject constructor(
         mutex.withLock {
             if (force) byChannel.clear()
             val pending = channelUrls.filter { !byChannel.containsKey(it) }
+            DebugLog.log("Feed", "start channels=${channelUrls.size} pending=${pending.size} force=$force")
             if (pending.size < channelUrls.size) send(merged(channelUrls))
             val limit = Semaphore(CONCURRENCY)
             coroutineScope {
@@ -34,7 +36,7 @@ class FeedRepository @Inject constructor(
                     launch {
                         val videos = limit.withPermit {
                             try {
-                                repository.channelUploads(url).items.take(PER_CHANNEL)
+                                fetch(url)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -43,12 +45,28 @@ class FeedRepository @Inject constructor(
                         }
                         if (videos != null) {
                             byChannel[url] = videos
+                            DebugLog.log("Feed", "channel done ${byChannel.size}/${channelUrls.size}")
                             send(merged(channelUrls))
                         }
                     }
                 }
             }
         }
+    }
+
+    private suspend fun fetch(url: String): List<VideoItem> {
+        try {
+            val videos = repository.channelFeed(url).take(PER_CHANNEL)
+            if (videos.isNotEmpty()) {
+                DebugLog.log("Feed", "feed rss $url")
+                return videos
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+        DebugLog.log("Feed", "feed fallback $url")
+        return repository.channelUploads(url).items.take(PER_CHANNEL)
     }
 
     private fun merged(channelUrls: List<String>): List<VideoItem> = channelUrls

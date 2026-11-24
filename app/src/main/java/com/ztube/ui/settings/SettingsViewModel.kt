@@ -1,12 +1,16 @@
 package com.ztube.ui.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ztube.CrashReporter
 import com.ztube.data.account.YoutubeAccountManager
 import com.ztube.data.account.message
 import com.ztube.data.prefs.SettingsRepository
 import com.ztube.data.prefs.YoutubeAccount
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,12 +19,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val accountManager: YoutubeAccountManager,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     val sponsorBlockEnabled: StateFlow<Boolean> = settings.sponsorBlockEnabled
@@ -44,6 +50,12 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoplay(enabled: Boolean) {
         viewModelScope.launch { settings.setAutoplay(enabled) }
+    }
+
+    fun sendDebugReport(send: (String) -> Unit) {
+        viewModelScope.launch {
+            send(withContext(Dispatchers.IO) { CrashReporter.debugReport(context) })
+        }
     }
 
     fun syncNow() {

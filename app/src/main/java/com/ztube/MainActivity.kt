@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DebugLog.log("Main", "onCreate restored=${savedInstanceState != null}")
         enableEdgeToEdge()
         val showSplashInitially = savedInstanceState == null
         setContent {
@@ -95,6 +96,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        DebugLog.log("Main", "onDestroy changingConfig=$isChangingConfigurations")
+        super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        DebugLog.log("Main", "onConfigurationChanged")
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        DebugLog.log("Main", "onTrimMemory level=$level")
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && pipState.canEnter.value) {
@@ -107,6 +123,7 @@ class MainActivity : ComponentActivity() {
         newConfig: Configuration,
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        DebugLog.log("Main", "pip=$isInPictureInPictureMode changingConfig=$isChangingConfigurations")
         pipState.inPip.value = isInPictureInPictureMode
     }
 
