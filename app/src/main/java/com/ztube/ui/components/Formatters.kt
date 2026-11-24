@@ -30,8 +30,16 @@ private fun compact(value: Double, suffix: String): String {
 fun videoMeta(video: VideoItem, withUploader: Boolean = true): String = listOfNotNull(
     video.uploader.takeIf { withUploader && it.isNotEmpty() },
     video.viewCount.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
-    video.uploadedText?.takeIf { it.isNotEmpty() },
+    uploadedText(video.uploadedAtMillis, video.uploadedText)?.takeIf { it.isNotEmpty() },
 ).joinToString(" · ")
 
 fun formatTimeAgo(millis: Long): String =
     DateUtils.getRelativeTimeSpanString(millis, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+
+private val isoDate = Regex("^\\d{4}-\\d{2}-\\d{2}T.*")
+
+fun uploadedText(millis: Long?, textual: String?): String? = when {
+    millis != null -> formatTimeAgo(millis)
+    textual != null && !isoDate.matches(textual) -> textual
+    else -> null
+}

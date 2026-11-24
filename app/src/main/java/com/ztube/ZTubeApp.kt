@@ -25,6 +25,7 @@ class ZTubeApp : Application(), Configuration.Provider {
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
 
     override fun onCreate() {
+        CrashReporter.install(this)
         super.onCreate()
         NewPipe.init(OkHttpDownloader())
         val scope = CoroutineScope(Dispatchers.Default)
