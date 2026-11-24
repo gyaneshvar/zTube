@@ -75,6 +75,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.fromHtml
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -391,6 +399,13 @@ private fun Details(
 ) {
     var titleExpanded by rememberSaveable { mutableStateOf(false) }
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
+    val linkStyle = TextLinkStyles(SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline))
+    val uriHandler = LocalUriHandler.current
+    val openLink = remember(uriHandler) {
+        LinkInteractionListener { link ->
+            runCatching { uriHandler.openUri((link as LinkAnnotation.Url).url) }
+        }
+    }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
@@ -492,8 +507,15 @@ private fun Details(
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Text("Description", style = MaterialTheme.typography.titleSmall)
+                        val description = remember(state.description, state.descriptionIsHtml, linkStyle, openLink) {
+                            if (state.descriptionIsHtml) {
+                                AnnotatedString.fromHtml(state.description, linkStyles = linkStyle, linkInteractionListener = openLink)
+                            } else {
+                                AnnotatedString(state.description)
+                            }
+                        }
                         Text(
-                            state.description,
+                            description,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = if (descriptionExpanded) Int.MAX_VALUE else 3,
                             overflow = TextOverflow.Ellipsis,

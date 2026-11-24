@@ -22,6 +22,7 @@ import com.ztube.data.db.SubscriptionEntity
 import com.ztube.data.extractor.VideoItem
 import com.ztube.data.extractor.best
 import com.ztube.data.extractor.YoutubeRepository
+import com.ztube.ui.components.uploadedText
 import com.ztube.data.prefs.SettingsRepository
 import com.ztube.download.DownloadManager
 import com.ztube.download.DownloadOption
@@ -50,6 +51,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.schabi.newpipe.extractor.stream.Description
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import javax.inject.Inject
 
@@ -62,6 +64,7 @@ sealed interface PlayerUiState {
         val uploaderAvatarUrl: String?,
         val viewCount: Long,
         val description: String,
+        val descriptionIsHtml: Boolean = false,
         val heights: List<Int>,
         val quality: Int,
         val likeCount: Long = -1,
@@ -311,11 +314,12 @@ class PlayerViewModel @Inject constructor(
         uploaderAvatarUrl = streamInfo.uploaderAvatars.best(),
         viewCount = streamInfo.viewCount,
         description = streamInfo.description.content.orEmpty(),
+        descriptionIsHtml = streamInfo.description.type == Description.Type.HTML,
         heights = heights,
         quality = quality,
         likeCount = streamInfo.likeCount,
         subscriberCount = streamInfo.uploaderSubscriberCount,
-        uploadedText = streamInfo.textualUploadDate,
+        uploadedText = uploadedText(streamInfo.uploadDate?.instant?.toEpochMilli(), streamInfo.textualUploadDate),
         thumbnail = streamInfo.thumbnails.best(),
     )
 
