@@ -26,7 +26,7 @@ Requires **Android 8.0 (API 26)** or newer. Updates install over the previous ve
 | **Quality selection** | 144p – 1080p, original audio track preferred |
 | **Up next & autoplay** | Related videos under the player; autoplay continues in mini-player, PiP and background |
 | **Offline downloads** | Pick a quality or audio-only; resumable; plays in airplane mode |
-| **Local library** | Subscriptions feed, watch history with resume, playlists |
+| **Local library** | Subscriptions feed (saved for instant start, refreshed in the background), watch history with resume, playlists |
 | **Takeout import** | Import your YouTube subscriptions from Google Takeout `subscriptions.csv` |
 | **Google sign-in** | Optional, read-only import of your YouTube subscriptions and playlists (see below) |
 | **Gestures** | Double-tap left/right edge to seek ±10 s, rotate for fullscreen |
@@ -83,7 +83,7 @@ app/src/main/java/com/ztube/
 ├── data/
 │   ├── db/            Room database: subscriptions, history, playlists, downloads
 │   ├── extractor/     NewPipe downloader + YoutubeRepository (search, streams, channels, paging)
-│   ├── feed/          Subscription feed
+│   ├── feed/          Subscription feed, saved in Room
 │   ├── prefs/         DataStore settings (speed, quality, autoplay, SponsorBlock, recent searches)
 │   └── sponsorblock/  SponsorBlock client
 ├── playback/          PlaybackService, stream selection, YouTube data source, autoplay, error recovery
