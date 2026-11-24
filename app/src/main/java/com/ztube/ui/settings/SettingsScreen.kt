@@ -41,9 +41,11 @@ import com.ztube.ui.components.LocalSnackbar
 import com.ztube.ui.components.SwitchRow
 import com.ztube.ui.components.TitleTopBar
 import com.ztube.ui.components.formatTimeAgo
+import com.ztube.ui.update.UpdateViewModel
 
 @Composable
 fun SettingsScreen(
+    update: UpdateViewModel,
     viewModel: SettingsViewModel = hiltViewModel(),
     signIn: GoogleSignInViewModel = hiltViewModel(),
 ) {
@@ -52,11 +54,15 @@ fun SettingsScreen(
     val account by viewModel.account.collectAsStateWithLifecycle()
     val syncing by viewModel.working.collectAsStateWithLifecycle()
     val signInWorking by signIn.working.collectAsStateWithLifecycle()
+    val checkingUpdate by update.checking.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.show(it) }
+    }
+    LaunchedEffect(Unit) {
+        update.messages.collect { snackbar.show(it) }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -108,6 +114,16 @@ fun SettingsScreen(
             },
             modifier = Modifier.padding(horizontal = 8.dp),
         ) { Text("Send debug log") }
+        Text(
+            "About",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
+        )
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("zTube ${update.currentVersion}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = update::checkNow, enabled = !checkingUpdate) { Text("Check for updates") }
+        }
     }
 
     GoogleSignInHost(signIn)

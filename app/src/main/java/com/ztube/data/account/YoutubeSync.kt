@@ -113,17 +113,19 @@ class YoutubeSync @Inject constructor(
         val items = playlists.map { it.id to api.playlistItems(token, it.id) }
         val videos = api.videos(token, items.flatMap { (_, list) -> list.orEmpty().map { it.videoId } }.distinct())
             .associateBy { it.id }
+        val liked = api.likedVideos(token)
         return Fetched(
             subscriptions.items,
             subscriptions.items.size >= subscriptions.totalResults,
-            playlists.mapIndexed { index, playlist ->
-                val list = items[index].second
-                FetchedPlaylist(
-                    playlist.id,
-                    playlist.title,
-                    list?.mapNotNull { videos[it.videoId] }?.distinctBy { it.id },
-                )
-            },
+            listOf(FetchedPlaylist(LIKED_PLAYLIST_ID, "Liked videos", liked?.distinctBy { it.id })) +
+                playlists.mapIndexed { index, playlist ->
+                    val list = items[index].second
+                    FetchedPlaylist(
+                        playlist.id,
+                        playlist.title,
+                        list?.mapNotNull { videos[it.videoId] }?.distinctBy { it.id },
+                    )
+                },
         )
     }
 
@@ -172,4 +174,8 @@ class YoutubeSync @Inject constructor(
     private fun channelUrl(id: String) = "https://www.youtube.com/channel/$id"
 
     private fun videoUrl(id: String) = "https://www.youtube.com/watch?v=$id"
+
+    private companion object {
+        const val LIKED_PLAYLIST_ID = "LL"
+    }
 }

@@ -60,6 +60,7 @@ import coil3.compose.AsyncImage
 import com.ztube.data.prefs.YoutubeAccount
 import com.ztube.ui.account.AccountTabViewModel
 import com.ztube.ui.account.SignInPrompt
+import com.ztube.ui.account.SignInPromptViewModel
 import com.ztube.ui.channel.ChannelScreen
 import com.ztube.ui.components.AppSnackbar
 import com.ztube.ui.components.LocalSnackbar
@@ -72,6 +73,8 @@ import com.ztube.ui.player.PlayerScreen
 import com.ztube.ui.playlist.PlaylistScreen
 import com.ztube.ui.search.SearchScreen
 import com.ztube.ui.settings.SettingsScreen
+import com.ztube.ui.update.UpdateHost
+import com.ztube.ui.update.UpdateViewModel
 
 private enum class Tab(
     val route: String,
@@ -94,11 +97,14 @@ fun ZTubeRoot(
     splashVisible: Boolean,
     miniPlayer: MiniPlayerViewModel = hiltViewModel(),
     accountTab: AccountTabViewModel = hiltViewModel(),
+    update: UpdateViewModel = hiltViewModel(),
+    signInPrompt: SignInPromptViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
     val miniItem by miniPlayer.item.collectAsStateWithLifecycle()
     val miniPlaying by miniPlayer.playing.collectAsStateWithLifecycle()
     val account by accountTab.account.collectAsStateWithLifecycle()
+    val signInPromptVisible by signInPrompt.visible.collectAsStateWithLifecycle()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
     val onPlayer = destination?.route == PLAYER_ROUTE
@@ -121,6 +127,7 @@ fun ZTubeRoot(
 
     CompositionLocalProvider(LocalSnackbar provides appSnackbar) {
         SignInPrompt(splashVisible)
+        UpdateHost(update, blocked = splashVisible || signInPromptVisible)
         Scaffold(
             contentWindowInsets = WindowInsets(0),
             snackbarHost = { SnackbarHost(snackbarHost) },
@@ -196,7 +203,7 @@ fun ZTubeRoot(
                     )
                 }
                 composable(Tab.You.route) {
-                    SettingsScreen()
+                    SettingsScreen(update = update)
                 }
                 composable(
                     PLAYER_ROUTE,

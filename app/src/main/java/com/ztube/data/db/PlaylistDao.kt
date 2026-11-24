@@ -20,7 +20,7 @@ interface PlaylistDao {
         "SELECT p.id AS id, p.name AS name, COUNT(v.videoUrl) AS videoCount, " +
             "p.youtubePlaylistId AS youtubePlaylistId FROM playlists p " +
             "LEFT JOIN playlist_videos v ON v.playlistId = p.id " +
-            "GROUP BY p.id ORDER BY p.createdAt DESC",
+            "GROUP BY p.id ORDER BY p.youtubePlaylistId = 'LL' DESC, p.createdAt DESC",
     )
     fun playlists(): Flow<List<PlaylistSummary>>
 
