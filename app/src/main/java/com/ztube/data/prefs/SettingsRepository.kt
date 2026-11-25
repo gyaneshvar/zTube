@@ -40,6 +40,9 @@ class SettingsRepository @Inject constructor(
     val sponsorBlockEnabled: Flow<Boolean> = context.dataStore.data.map { it[SPONSOR_BLOCK] ?: true }
 
     val autoplay: Flow<Boolean> = context.dataStore.data.map { it[AUTOPLAY] ?: true }
+
+    val shortsAutoScroll: Flow<Boolean> = context.dataStore.data.map { it[SHORTS_AUTO_SCROLL] ?: true }
+
     val recentSearches: Flow<List<String>> = context.dataStore.data.map { prefs ->
         prefs[RECENT_SEARCHES]?.split('\n')?.filter { it.isNotEmpty() }.orEmpty()
     }
@@ -122,6 +125,10 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[AUTOPLAY] = enabled }
     }
 
+    suspend fun setShortsAutoScroll(enabled: Boolean) {
+        context.dataStore.edit { it[SHORTS_AUTO_SCROLL] = enabled }
+    }
+
     suspend fun addRecentSearch(query: String) {
         context.dataStore.edit { prefs ->
             val current = prefs[RECENT_SEARCHES]?.split('\n').orEmpty()
@@ -162,6 +169,7 @@ class SettingsRepository @Inject constructor(
         val QUALITY = intPreferencesKey("quality")
         val SPONSOR_BLOCK = booleanPreferencesKey("sponsor_block")
         val AUTOPLAY = booleanPreferencesKey("autoplay")
+        val SHORTS_AUTO_SCROLL = booleanPreferencesKey("shorts_auto_scroll")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val ACCOUNT_EMAIL = stringPreferencesKey("google_account_email")
         val CHANNEL_ID = stringPreferencesKey("youtube_channel_id")

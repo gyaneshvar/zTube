@@ -18,6 +18,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -54,8 +56,11 @@ import coil3.compose.AsyncImage
 import com.ztube.R
 import com.ztube.data.extractor.VideoItem
 import com.ztube.ui.components.rememberImageRequest
+import com.ztube.ui.components.shareVideo
 import com.ztube.ui.player.findActivity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 @Composable
 fun ShortsPager(
@@ -79,6 +84,20 @@ fun ShortsPager(
 
     LaunchedEffect(settled?.url) {
         if (settled != null) viewModel.play(settled, next)
+    }
+
+    LaunchedEffect(pagerState) {
+        viewModel.advance.collect { url ->
+            val settled = pagerState.settledPage
+            if (items.getOrNull(settled)?.url == url && settled + 1 < items.size) {
+                viewModel.pause()
+                try {
+                    pagerState.animateScrollToPage(settled + 1)
+                } catch (e: CancellationException) {
+                    if (isActive) viewModel.resume() else throw e
+                }
+            }
+        }
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.pause() }
@@ -130,6 +149,7 @@ private fun ShortPage(
     onTap: () -> Unit,
     onChannelClick: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     var progress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(active, controller) {
@@ -220,6 +240,33 @@ private fun ShortPage(
                         .clickable(enabled = item.uploaderUrl.isNotEmpty()) { onChannelClick(item.uploaderUrl) },
                 )
             }
+        }
+        Column(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 8.dp, bottom = 112.dp)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                    shareVideo(context, item.url, item.title, true)
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                Icons.Outlined.Share,
+                contentDescription = "Share",
+                tint = Color.White,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .padding(10.dp),
+            )
+            Text(
+                "Share",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium.copy(shadow = Shadow(Color.Black, blurRadius = 6f)),
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
         if (active) {
             LinearProgressIndicator(

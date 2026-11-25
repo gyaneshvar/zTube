@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +67,7 @@ import com.ztube.ui.components.SubscribeButton
 import com.ztube.ui.components.VideoRow
 import com.ztube.ui.components.VideoRowSkeleton
 import com.ztube.ui.components.formatCount
+import com.ztube.ui.components.shareVideo
 import com.ztube.ui.components.shimmer
 import com.ztube.ui.components.videoMeta
 import androidx.compose.foundation.verticalScroll
@@ -317,6 +319,10 @@ fun PlayerScreen(
                     onSpeed = { sheet = Sheet.Speed },
                     onQuality = { sheet = Sheet.Quality },
                     onPlaylist = { sheet = Sheet.Playlist },
+                    onShare = {
+                        val url = viewModel.videoUrl
+                        shareVideo(context, url, s.title, "/shorts/" in url)
+                    },
                     onSubscribe = viewModel::toggleSubscribe,
                     onChannelClick = { onChannelClick(s.uploaderUrl) },
                     onAutoplay = viewModel::setAutoplay,
@@ -401,6 +407,7 @@ private fun Details(
     onSpeed: () -> Unit,
     onQuality: () -> Unit,
     onPlaylist: () -> Unit,
+    onShare: () -> Unit,
     onSubscribe: () -> Unit,
     onChannelClick: () -> Unit,
     onAutoplay: (Boolean) -> Unit,
@@ -467,6 +474,7 @@ private fun Details(
                     enabled = canDownload || download != null,
                 )
                 ActionChip(Icons.AutoMirrored.Filled.PlaylistAdd, "Save", onPlaylist)
+                ActionChip(Icons.Outlined.Share, "Share", onShare)
             }
         }
         item {

@@ -51,6 +51,7 @@ fun SettingsScreen(
 ) {
     val sponsorBlock by viewModel.sponsorBlockEnabled.collectAsStateWithLifecycle()
     val autoplay by viewModel.autoplay.collectAsStateWithLifecycle()
+    val shortsAutoScroll by viewModel.shortsAutoScroll.collectAsStateWithLifecycle()
     val account by viewModel.account.collectAsStateWithLifecycle()
     val syncing by viewModel.working.collectAsStateWithLifecycle()
     val signInWorking by signIn.working.collectAsStateWithLifecycle()
@@ -102,6 +103,12 @@ fun SettingsScreen(
             subtitle = "Play the next video when one ends",
             checked = autoplay,
             onCheckedChange = viewModel::setAutoplay,
+        )
+        SwitchRow(
+            title = "Auto-scroll Shorts",
+            subtitle = "Move to the next Short when one ends",
+            checked = shortsAutoScroll,
+            onCheckedChange = viewModel::setShortsAutoScroll,
         )
         TextButton(
             onClick = {

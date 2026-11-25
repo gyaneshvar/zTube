@@ -2,6 +2,7 @@ package com.ztube.ui.shorts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -14,11 +15,14 @@ import com.ztube.playback.PlayerConnection
 import com.ztube.playback.videoMediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -46,6 +50,11 @@ class ShortsViewModel @Inject constructor(
     private val _failed = MutableStateFlow(false)
     val failed: StateFlow<Boolean> = _failed.asStateFlow()
 
+    private val _advance = Channel<String>(Channel.CONFLATED)
+    val advance: Flow<String> = _advance.receiveAsFlow()
+
+    private val autoScroll = settings.shortsAutoScroll.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     private val played = mutableSetOf<String>()
     private var playJob: Job? = null
     private var prefetchJob: Job? = null
@@ -59,6 +68,12 @@ class ShortsViewModel @Inject constructor(
         override fun onPlaybackStateChanged(playbackState: Int) {
             _buffering.value = playbackState == Player.STATE_BUFFERING
             if (playbackState == Player.STATE_READY) _failed.value = false
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
+            val url = mediaItem?.mediaId ?: return
+            if (autoScroll.value) _advance.trySend(url)
         }
 
         override fun onRenderedFirstFrame() {
@@ -106,6 +121,10 @@ class ShortsViewModel @Inject constructor(
     }
 
     fun togglePlay() = connection.togglePlay()
+
+    fun resume() {
+        connection.controller.value?.play()
+    }
 
     fun pause() {
         connection.controller.value?.pause()

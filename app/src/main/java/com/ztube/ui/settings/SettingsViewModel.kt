@@ -35,6 +35,9 @@ class SettingsViewModel @Inject constructor(
     val autoplay: StateFlow<Boolean> = settings.autoplay
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val shortsAutoScroll: StateFlow<Boolean> = settings.shortsAutoScroll
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     val account: StateFlow<YoutubeAccount?> = accountManager.account
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -50,6 +53,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoplay(enabled: Boolean) {
         viewModelScope.launch { settings.setAutoplay(enabled) }
+    }
+
+    fun setShortsAutoScroll(enabled: Boolean) {
+        viewModelScope.launch { settings.setShortsAutoScroll(enabled) }
     }
 
     fun sendDebugReport(send: (String) -> Unit) {
