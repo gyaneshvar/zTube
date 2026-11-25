@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.view.LayoutInflater
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -57,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.ztube.R
 import com.ztube.data.extractor.VideoItem
 import com.ztube.ui.components.Avatar
 import com.ztube.ui.components.ErrorState
@@ -125,7 +127,7 @@ import com.ztube.download.formatSize
 private val SPEEDS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
 private val SEEK_MS = 10_000L
-private val CONTROLS_HEIGHT = 96.dp
+private val CONTROLS_HEIGHT = 54.dp
 
 private var notificationAsked = false
 
@@ -231,7 +233,7 @@ fun PlayerScreen(
         ) {
             AndroidView(
                 factory = { ctx ->
-                    PlayerView(ctx).apply {
+                    (LayoutInflater.from(ctx).inflate(R.layout.player_view, null) as PlayerView).apply {
                         setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                         setFullscreenButtonClickListener { fullscreen = it }
                         setControllerVisibilityListener(
@@ -269,14 +271,14 @@ fun PlayerScreen(
                         forward = false,
                         onSeek = { seekBy(-SEEK_MS) },
                         onTap = ::toggleController,
-                        modifier = Modifier.weight(0.3f).fillMaxHeight(),
+                        modifier = Modifier.weight(0.2f).fillMaxHeight(),
                     )
-                    Spacer(Modifier.weight(0.4f))
+                    Spacer(Modifier.weight(0.6f))
                     SeekZone(
                         forward = true,
                         onSeek = { seekBy(SEEK_MS) },
                         onTap = ::toggleController,
-                        modifier = Modifier.weight(0.3f).fillMaxHeight(),
+                        modifier = Modifier.weight(0.2f).fillMaxHeight(),
                     )
                 }
                 playbackError?.let { message ->
@@ -289,14 +291,11 @@ fun PlayerScreen(
                     }
                 }
             }
-            if (!videoOnly) {
+            if (!videoOnly && (controllerVisible || state !is PlayerUiState.Loaded)) {
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = Color.Black.copy(alpha = 0.4f),
-                        contentColor = Color.White,
-                    ),
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
                 ) {
                     Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Minimize")
                 }
@@ -451,7 +450,7 @@ private fun Details(
             Row(
                 Modifier
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ActionChip(Icons.Filled.Speed, speedLabel(speed), onSpeed)
@@ -511,7 +510,7 @@ private fun Details(
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                         .animateContentSize()
                         .clickable { descriptionExpanded = !descriptionExpanded },
                 ) {
