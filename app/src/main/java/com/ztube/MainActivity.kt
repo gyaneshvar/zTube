@@ -13,6 +13,29 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -143,19 +166,142 @@ class MainActivity : ComponentActivity() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFFFBF6F2))
+                    .background(Brush.verticalGradient(listOf(Color(0xFFFBF6F2), Color(0xFFFDE7EC))))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) { onDismiss() },
-                contentAlignment = Alignment.Center,
+            ) {
+                SplashContent()
+            }
+        }
+    }
+
+    @Composable
+    private fun SplashContent() {
+        var started by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { started = true }
+        val photoAlpha by animateFloatAsState(if (started) 1f else 0f, tween(450), label = "photoAlpha")
+        val photoScale by animateFloatAsState(if (started) 1f else 0.85f, tween(450), label = "photoScale")
+        val textAlpha by animateFloatAsState(
+            if (started) 1f else 0f,
+            tween(450, delayMillis = 200),
+            label = "textAlpha",
+        )
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            contentAlignment = Alignment.Center,
+        ) {
+            val landscape = maxWidth > maxHeight
+            val scale = (minOf(maxWidth, maxHeight) / 360.dp).coerceIn(0.85f, 1.35f)
+            val photoSize = if (landscape) {
+                minOf(maxHeight * 0.6f, maxWidth * 0.36f)
+            } else {
+                minOf(maxWidth * 0.62f, maxHeight * 0.38f)
+            }.coerceAtMost(320.dp)
+            if (landscape) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(40.dp),
+                ) {
+                    SplashPhoto(photoSize, photoAlpha, photoScale)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        SplashLogo(scale, textAlpha)
+                        Spacer(Modifier.height(16.dp))
+                        SplashText(scale, textAlpha)
+                    }
+                }
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    SplashLogo(scale, textAlpha)
+                    Spacer(Modifier.height(28.dp))
+                    SplashPhoto(photoSize, photoAlpha, photoScale)
+                    Spacer(Modifier.height(24.dp))
+                    SplashText(scale, textAlpha)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun SplashPhoto(size: Dp, alpha: Float, scale: Float) {
+        Image(
+            painter = painterResource(R.drawable.splash_ira_face),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .graphicsLayer {
+                    this.alpha = alpha
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .size(size)
+                .shadow(12.dp, CircleShape)
+                .clip(CircleShape)
+                .border(4.dp, Color.White, CircleShape),
+        )
+    }
+
+    @Composable
+    private fun SplashLogo(scale: Float, alpha: Float) {
+        Row(
+            modifier = Modifier.graphicsLayer { this.alpha = alpha },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp * scale)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFFFF8A00), Color(0xFFFF2D78), Color(0xFF8E2DE2)),
+                        ),
+                        RoundedCornerShape(12.dp),
+                    ),
             ) {
                 Image(
-                    painter = painterResource(R.drawable.splash_ira),
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
                     contentDescription = null,
-                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().scale(1.9f),
                 )
             }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = "zTube",
+                fontSize = 30.sp * scale,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1B4B),
+            )
+        }
+    }
+
+    @Composable
+    private fun SplashText(scale: Float, alpha: Float) {
+        Column(
+            modifier = Modifier.graphicsLayer { this.alpha = alpha },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Ira's World",
+                fontSize = 26.sp * scale,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE91E63),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Little moments. Big smiles.",
+                fontSize = 15.sp * scale,
+                color = Color(0xFF1E1B4B),
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "100% Ad-Free",
+                fontSize = 14.sp * scale,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                modifier = Modifier
+                    .background(Color(0xFFE91E63), RoundedCornerShape(50))
+                    .padding(horizontal = 18.dp, vertical = 7.dp),
+            )
         }
     }
 }
