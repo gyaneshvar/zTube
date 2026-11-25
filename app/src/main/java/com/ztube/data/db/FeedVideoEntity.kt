@@ -45,4 +45,5 @@ fun FeedVideoEntity.toVideoItem() = VideoItem(
     uploadedText = uploadedText,
     uploadedAtMillis = uploadedAtMillis,
     uploaderAvatarUrl = uploaderAvatarUrl,
+    isShort = "/shorts/" in videoUrl,
 )

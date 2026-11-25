@@ -45,7 +45,7 @@ class YoutubeRepository @Inject constructor() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedInfo>) = size > CACHE_SIZE
     }
 
-    private val videosTabs = object : LinkedHashMap<String, ListLinkHandler>(TABS_SIZE + 1, 0.75f, true) {
+    private val channelTabs = object : LinkedHashMap<String, ListLinkHandler>(TABS_SIZE + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ListLinkHandler>) = size > TABS_SIZE
     }
 
@@ -96,16 +96,36 @@ class YoutubeRepository @Inject constructor() {
 
     suspend fun channelUploadsMore(channelUrl: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
         DebugLog.log("Repo", "channelUploadsMore $channelUrl")
-        val tab = synchronized(videosTabs) { videosTabs[channelUrl] } ?: videosTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl)
+        channelTabMore(channelUrl, ChannelTabs.VIDEOS, page)
+    }
+
+    suspend fun channelShorts(channelUrl: String): PagedVideos = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "channelShorts $channelUrl")
+        val tab = synchronized(channelTabs) { channelTabs["$channelUrl|${ChannelTabs.SHORTS}"] }
+            ?: channelTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl, ChannelTabs.SHORTS)
             ?: return@withContext PagedVideos(emptyList(), null)
+        val tabInfo = ChannelTabInfo.getInfo(youtube, tab)
+        PagedVideos(tabInfo.relatedItems.toVideos(), tabInfo.nextPage.validOrNull())
+    }
+
+    suspend fun channelShortsMore(channelUrl: String, page: Page): PagedVideos = withContext(Dispatchers.IO) {
+        DebugLog.log("Repo", "channelShortsMore $channelUrl")
+        channelTabMore(channelUrl, ChannelTabs.SHORTS, page)
+    }
+
+    private fun channelTabMore(channelUrl: String, filter: String, page: Page): PagedVideos {
+        val tab = synchronized(channelTabs) { channelTabs["$channelUrl|$filter"] }
+            ?: channelTab(ChannelInfo.getInfo(youtube, channelUrl), channelUrl, filter)
+            ?: return PagedVideos(emptyList(), null)
         val more = ChannelTabInfo.getMoreItems(youtube, tab, page)
-        PagedVideos(more.items.toVideos(), more.nextPage.validOrNull())
+        return PagedVideos(more.items.toVideos(), more.nextPage.validOrNull())
     }
 
     suspend fun channel(channelUrl: String): ChannelPage = withContext(Dispatchers.IO) {
         DebugLog.log("Repo", "channel $channelUrl")
         val info = ChannelInfo.getInfo(youtube, channelUrl)
         val videos = uploads(channelUrl, info)
+        channelTab(info, channelUrl, ChannelTabs.SHORTS)
         ChannelPage(
             name = info.name.orEmpty(),
             avatarUrl = info.avatars.best(),
@@ -115,14 +135,14 @@ class YoutubeRepository @Inject constructor() {
     }
 
     private fun uploads(channelUrl: String, info: ChannelInfo): PagedVideos {
-        val tab = videosTab(info, channelUrl) ?: return PagedVideos(emptyList(), null)
+        val tab = channelTab(info, channelUrl, ChannelTabs.VIDEOS) ?: return PagedVideos(emptyList(), null)
         val tabInfo = ChannelTabInfo.getInfo(youtube, tab)
         return PagedVideos(tabInfo.relatedItems.toVideos(), tabInfo.nextPage.validOrNull())
     }
 
-    private fun videosTab(info: ChannelInfo, channelUrl: String): ListLinkHandler? =
-        info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
-            ?.also { synchronized(videosTabs) { videosTabs[channelUrl] = it } }
+    private fun channelTab(info: ChannelInfo, channelUrl: String, filter: String): ListLinkHandler? =
+        info.tabs.firstOrNull { filter in it.contentFilters }
+            ?.also { synchronized(channelTabs) { channelTabs["$channelUrl|$filter"] = it } }
 
     private fun searchHandler(query: String) = youtube.searchQHFactory.fromQuery(
         query,
@@ -140,7 +160,7 @@ class YoutubeRepository @Inject constructor() {
     private companion object {
         const val CACHE_TTL_MS = 30 * 60 * 1000L
         const val CACHE_SIZE = 4
-        const val TABS_SIZE = 8
+        const val TABS_SIZE = 16
     }
 
     private fun StreamInfoItem.toVideoItem() = VideoItem(
@@ -154,5 +174,6 @@ class YoutubeRepository @Inject constructor() {
         uploadedText = textualUploadDate,
         uploadedAtMillis = uploadDate?.instant?.toEpochMilli(),
         uploaderAvatarUrl = uploaderAvatars.best(),
+        isShort = isShortFormContent || "/shorts/" in url,
     )
 }

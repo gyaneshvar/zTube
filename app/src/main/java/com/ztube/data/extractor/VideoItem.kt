@@ -11,4 +11,5 @@ data class VideoItem(
     val uploadedText: String?,
     val uploadedAtMillis: Long? = null,
     val uploaderAvatarUrl: String? = null,
+    val isShort: Boolean = false,
 )

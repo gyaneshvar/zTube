@@ -58,6 +58,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ztube.data.extractor.VideoItem
 import com.ztube.ui.components.EmptyState
 import com.ztube.ui.components.ErrorState
 import com.ztube.ui.components.LoadMoreEffect
@@ -68,6 +69,7 @@ import com.ztube.ui.components.VideoListSkeleton
 @Composable
 fun SearchScreen(
     onVideoClick: (String) -> Unit,
+    onShortClick: (VideoItem) -> Unit,
     onChannelClick: (String) -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
@@ -167,7 +169,7 @@ fun SearchScreen(
                         items(s.videos, key = { it.url }) { video ->
                             VideoCard(
                                 video,
-                                onClick = { onVideoClick(video.url) },
+                                onClick = { if (video.isShort) onShortClick(video) else onVideoClick(video.url) },
                                 onUploaderClick = { onChannelClick(video.uploaderUrl) },
                             )
                         }

@@ -99,6 +99,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 DebugLog.log(TAG, "transition id=${mediaItem?.mediaId} reason=$reason count=${player.mediaItemCount}")
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
                 loadSegments(mediaItem)
                 val sameItem = mediaItem?.mediaId == lastMediaId
                 lastMediaId = mediaItem?.mediaId
@@ -296,6 +297,7 @@ class PlaybackService : MediaSessionService() {
     private fun enqueueNext() {
         nextJob?.cancel()
         val current = player.currentMediaItem ?: return
+        if (player.repeatMode != Player.REPEAT_MODE_OFF) return
         if (!autoplay || player.currentMediaItemIndex != player.mediaItemCount - 1) return
         played.add(current.mediaId)
         DebugLog.log(TAG, "enqueueNext start current=${current.mediaId}")

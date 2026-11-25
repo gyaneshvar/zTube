@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.VideoLibrary
@@ -57,6 +59,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil3.compose.AsyncImage
+import com.ztube.data.extractor.VideoItem
 import com.ztube.data.prefs.YoutubeAccount
 import com.ztube.ui.account.AccountTabViewModel
 import com.ztube.ui.account.SignInPrompt
@@ -73,6 +76,9 @@ import com.ztube.ui.player.PlayerScreen
 import com.ztube.ui.playlist.PlaylistScreen
 import com.ztube.ui.search.SearchScreen
 import com.ztube.ui.settings.SettingsScreen
+import com.ztube.ui.shorts.ShortsQueueViewModel
+import com.ztube.ui.shorts.ShortsRouteScreen
+import com.ztube.ui.shorts.ShortsTabScreen
 import com.ztube.ui.update.UpdateHost
 import com.ztube.ui.update.UpdateViewModel
 
@@ -85,10 +91,12 @@ private enum class Tab(
     Home("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
     Search("search", "Search", Icons.Outlined.Search, Icons.Filled.Search),
     Library("library", "Library", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
+    Shorts("shorts_tab", "Shorts", Icons.Outlined.Bolt, Icons.Filled.Bolt),
     You("you", "You", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
 }
 
 private const val PLAYER_ROUTE = "player/{url}"
+private const val SHORTS_ROUTE = "shorts"
 private const val CHANNEL_ROUTE = "channel/{url}"
 private const val PLAYLIST_ROUTE = "playlist/{id}"
 
@@ -99,15 +107,19 @@ fun ZTubeRoot(
     accountTab: AccountTabViewModel = hiltViewModel(),
     update: UpdateViewModel = hiltViewModel(),
     signInPrompt: SignInPromptViewModel = hiltViewModel(),
+    shorts: ShortsQueueViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
     val miniItem by miniPlayer.item.collectAsStateWithLifecycle()
+    val shortsActiveUrl by shorts.queue.activeUrl.collectAsStateWithLifecycle()
     val miniPlaying by miniPlayer.playing.collectAsStateWithLifecycle()
     val account by accountTab.account.collectAsStateWithLifecycle()
     val signInPromptVisible by signInPrompt.visible.collectAsStateWithLifecycle()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
     val onPlayer = destination?.route == PLAYER_ROUTE
+    val onShortsRoute = destination?.route == SHORTS_ROUTE
+    val onShortsTab = destination?.route == Tab.Shorts.route
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val appSnackbar = remember { AppSnackbar(snackbarHost, scope) }
@@ -117,6 +129,10 @@ fun ZTubeRoot(
     fun openVideo(url: String) = navController.navigate("player/${Uri.encode(url)}") {
         popUpTo(PLAYER_ROUTE) { inclusive = true }
         launchSingleTop = true
+    }
+    fun openShorts(items: List<VideoItem>, index: Int) {
+        shorts.queue.set(items, index)
+        navController.navigate(SHORTS_ROUTE)
     }
     fun openChannel(url: String) = navController.navigate("channel/${Uri.encode(url)}")
     fun openTab(tab: Tab) = navController.navigate(tab.route) {
@@ -133,13 +149,13 @@ fun ZTubeRoot(
             snackbarHost = { SnackbarHost(snackbarHost) },
             bottomBar = {
                 AnimatedVisibility(
-                    visible = !onPlayer,
+                    visible = !onPlayer && !onShortsRoute,
                     enter = slideInVertically { it } + fadeIn(),
                     exit = slideOutVertically { it } + fadeOut(),
                 ) {
                     Column {
                         AnimatedVisibility(
-                            visible = miniItem != null,
+                            visible = miniItem != null && !onShortsTab && miniItem?.mediaId != shortsActiveUrl,
                             enter = slideInVertically { it } + fadeIn(),
                             exit = slideOutVertically { it } + fadeOut(),
                         ) {
@@ -188,12 +204,17 @@ fun ZTubeRoot(
                 composable(Tab.Home.route) {
                     HomeScreen(
                         onVideoClick = ::openVideo,
+                        onShortClick = ::openShorts,
                         onChannelClick = ::openChannel,
                         onOpenSearch = { openTab(Tab.Search) },
                     )
                 }
                 composable(Tab.Search.route) {
-                    SearchScreen(onVideoClick = ::openVideo, onChannelClick = ::openChannel)
+                    SearchScreen(
+                        onVideoClick = ::openVideo,
+                        onShortClick = { openShorts(listOf(it), 0) },
+                        onChannelClick = ::openChannel,
+                    )
                 }
                 composable(Tab.Library.route) {
                     LibraryScreen(
@@ -201,6 +222,9 @@ fun ZTubeRoot(
                         onChannelClick = ::openChannel,
                         onPlaylistClick = { navController.navigate("playlist/$it") },
                     )
+                }
+                composable(Tab.Shorts.route) {
+                    ShortsTabScreen(onChannelClick = ::openChannel)
                 }
                 composable(Tab.You.route) {
                     SettingsScreen(update = update)
@@ -215,9 +239,20 @@ fun ZTubeRoot(
                         onBack = { navController.popBackStack() },
                     )
                 }
+                composable(
+                    SHORTS_ROUTE,
+                    enterTransition = { slideInVertically { it } + fadeIn() },
+                    popExitTransition = { slideOutVertically { it } + fadeOut() },
+                ) {
+                    ShortsRouteScreen(
+                        onChannelClick = ::openChannel,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
                 composable(CHANNEL_ROUTE) {
                     ChannelScreen(
                         onVideoClick = ::openVideo,
+                        onShortClick = ::openShorts,
                         onBack = { navController.popBackStack() },
                     )
                 }

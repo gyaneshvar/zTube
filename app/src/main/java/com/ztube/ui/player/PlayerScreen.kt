@@ -758,7 +758,7 @@ private fun NewPlaylistDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit)
 private fun speedLabel(speed: Float) =
     if (speed % 1f == 0f) "${speed.toInt()}x" else "${speed}x"
 
-private tailrec fun Context.findActivity(): Activity? = when (this) {
+internal tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null

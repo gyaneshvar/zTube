@@ -25,6 +25,7 @@ Requires **Android 8.0 (API 26)** or newer. Updates install over the previous ve
 | **Speed control** | 0.25× – 3×, remembered across videos |
 | **Quality selection** | 144p – 1080p, original audio track preferred |
 | **Up next & autoplay** | Related videos under the player; autoplay continues in mini-player, PiP and background |
+| **Shorts** | Shelf on Home, a Shorts tab for your subscriptions and a Shorts section on each channel; swipe vertically through looping Shorts |
 | **Offline downloads** | Pick a quality or audio-only; resumable; plays in airplane mode |
 | **Local library** | Subscriptions feed (saved for instant start, refreshed in the background), watch history with resume, playlists |
 | **Takeout import** | Import your YouTube subscriptions from Google Takeout `subscriptions.csv` |

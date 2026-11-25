@@ -27,7 +27,7 @@ fun videoMediaItem(
                 .setTitle(title)
                 .setArtist(uploader)
                 .setArtworkUri(thumbnail?.toUri())
-                .setDurationMs(durationSeconds * 1000)
+                .setDurationMs(durationSeconds.takeIf { it > 0 }?.times(1000))
                 .build(),
         )
         .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build())
