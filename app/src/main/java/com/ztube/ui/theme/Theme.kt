@@ -59,15 +59,15 @@ private val LightColors = lightColorScheme(
 private val Base = Typography()
 
 private val AppTypography = Typography(
-    titleLarge = Base.titleLarge.copy(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = Base.titleMedium.copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = Base.titleSmall.copy(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = Base.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
-    bodyMedium = Base.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+    titleLarge = Base.titleLarge.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = Base.titleMedium.copy(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = Base.titleSmall.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = Base.bodyLarge.copy(fontSize = 14.sp, lineHeight = 20.sp),
+    bodyMedium = Base.bodyMedium.copy(fontSize = 13.sp, lineHeight = 18.sp),
     bodySmall = Base.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-    labelLarge = Base.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
-    labelMedium = Base.labelMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-    labelSmall = Base.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+    labelLarge = Base.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+    labelMedium = Base.labelMedium.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+    labelSmall = Base.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
 )
 
 @Composable

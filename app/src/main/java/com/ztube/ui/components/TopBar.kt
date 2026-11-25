@@ -38,13 +38,13 @@ fun Wordmark() {
             Text(
                 "z",
                 color = MaterialTheme.colorScheme.onPrimary,
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Black,
             )
         }
         Text(
             "zTube",
-            fontSize = 22.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = (-0.5).sp,
             modifier = Modifier.padding(start = 8.dp),
