@@ -18,9 +18,17 @@ abstract class FeedDao {
 
     @Query(
         "SELECT f.* FROM feed_videos f INNER JOIN subscriptions s ON s.channelUrl = f.channelUrl " +
-            "WHERE s.muted = 0 ORDER BY f.uploadedAtMillis IS NULL, f.uploadedAtMillis DESC LIMIT 300",
+            "WHERE s.muted = 0 AND f.videoUrl NOT LIKE '%/shorts/%' " +
+            "ORDER BY f.uploadedAtMillis IS NULL, f.uploadedAtMillis DESC LIMIT 300",
     )
     abstract fun feed(): Flow<List<FeedVideoEntity>>
+
+    @Query(
+        "SELECT f.* FROM feed_videos f INNER JOIN subscriptions s ON s.channelUrl = f.channelUrl " +
+            "WHERE s.muted = 0 AND f.videoUrl LIKE '%/shorts/%' " +
+            "ORDER BY f.uploadedAtMillis IS NULL, f.uploadedAtMillis DESC LIMIT 200",
+    )
+    abstract fun shorts(): Flow<List<FeedVideoEntity>>
 
     @Query(
         "SELECT s.channelUrl AS channelUrl, c.lastFetchedAt AS lastFetchedAt, " +

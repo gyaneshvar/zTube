@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
@@ -14,6 +17,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -22,9 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ztube.data.extractor.VideoItem
 import com.ztube.ui.components.EmptyState
 import com.ztube.ui.components.ErrorState
 import com.ztube.ui.components.LoadingRow
+import com.ztube.ui.components.ShortCard
 import com.ztube.ui.components.VideoCard
 import com.ztube.ui.components.VideoListSkeleton
 import com.ztube.ui.components.ZTubeTopBar
@@ -33,6 +39,7 @@ import com.ztube.ui.components.ZTubeTopBar
 @Composable
 fun HomeScreen(
     onVideoClick: (String) -> Unit,
+    onShortClick: (List<VideoItem>, Int) -> Unit,
     onChannelClick: (String) -> Unit,
     onOpenSearch: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -70,6 +77,30 @@ fun HomeScreen(
                     contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
+                    if (state.shorts.isNotEmpty()) {
+                        item {
+                            Column {
+                                Text(
+                                    "Shorts",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                )
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(top = 10.dp),
+                                ) {
+                                    itemsIndexed(state.shorts, key = { _, short -> short.url }) { index, short ->
+                                        ShortCard(
+                                            short,
+                                            onClick = { onShortClick(state.shorts, index) },
+                                            modifier = Modifier.width(110.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     items(state.videos, key = { it.url }) { video ->
                         VideoCard(
                             video,

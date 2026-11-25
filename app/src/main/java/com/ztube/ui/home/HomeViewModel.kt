@@ -20,6 +20,7 @@ import javax.inject.Inject
 data class HomeUiState(
     val hasSubscriptions: Boolean = true,
     val videos: List<VideoItem> = emptyList(),
+    val shorts: List<VideoItem> = emptyList(),
     val loading: Boolean = true,
     val refreshing: Boolean = false,
     val error: String? = null,
@@ -36,14 +37,15 @@ class HomeViewModel @Inject constructor(
 
     val state: StateFlow<HomeUiState> = combine(
         subscriptionDao.all(),
-        feed.videos,
+        combine(feed.videos, feed.shorts) { videos, shorts -> videos to shorts },
         feed.refreshing,
         pulling,
         error,
-    ) { subs, videos, loading, pulling, error ->
+    ) { subs, (videos, shorts), loading, pulling, error ->
         HomeUiState(
             hasSubscriptions = subs.isNotEmpty(),
             videos = videos,
+            shorts = shorts,
             loading = loading,
             refreshing = pulling && loading,
             error = error,

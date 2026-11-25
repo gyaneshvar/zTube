@@ -52,6 +52,19 @@ class FeedRepository @Inject constructor(
         )
     }.flowOn(Dispatchers.Default)
 
+    val shorts: Flow<List<VideoItem>> = flow {
+        var first = true
+        emitAll(
+            feedDao.shorts()
+                .debounce { if (first) 0L else DEBOUNCE_MS }
+                .distinctUntilChanged()
+                .map { rows ->
+                    first = false
+                    rows.map { it.toVideoItem() }
+                },
+        )
+    }.flowOn(Dispatchers.Default)
+
     suspend fun refresh(force: Boolean, allowFallback: Boolean = true): Boolean? {
         if (force) mutex.lock() else if (!mutex.tryLock()) return null
         _refreshing.value = true
